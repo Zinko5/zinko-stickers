@@ -1,4 +1,4 @@
-# System Patterns: StickerForge
+# System Patterns: Zinko Stickers
 
 ## Arquitectura General
 - **Patron arquitectonico**: MVVM (Model-View-ViewModel) con arquitectura limpia por capas.
@@ -7,7 +7,7 @@
 
 ## Capas del Sistema
 1. **Presentacion (UI & ViewModels)**:
-   - Pantallas Compose organizadas por caracteristicas (Home/Pack List, Editor/Crop, Pack Detail/Preview).
+   - Pantallas Compose organizadas por caracteristicas (`PackListScreen`, `PackDetailScreen`, `CropScreen`).
    - ViewModels dedicados para manejar estado de UI, validaciones de negocio y llamadas a casos de uso/repositorios.
 2. **Dominio (Modelos y Logica de Negocio)**:
    - Modelos de datos: `StickerPack`, `Sticker`, `StickerMetadata`.

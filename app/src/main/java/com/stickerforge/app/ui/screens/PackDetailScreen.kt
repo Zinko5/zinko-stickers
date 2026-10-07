@@ -1,7 +1,5 @@
 package com.stickerforge.app.ui.screens
 
-import android.app.AlertDialog
-import android.widget.EditText
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -28,15 +26,20 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Label
 import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.Animation
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Crop
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Warning
+import com.stickerforge.app.ui.components.StickerMetadataDialog
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -48,19 +51,22 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -81,9 +87,11 @@ import com.stickerforge.app.model.PackStickerItem
 import com.stickerforge.app.model.StickerPack
 import com.stickerforge.app.ui.components.TransparencyGrid
 import com.stickerforge.app.ui.theme.AccentTeal
+import com.stickerforge.app.ui.theme.AnimatedPurple
 import com.stickerforge.app.ui.theme.CardDark
 import com.stickerforge.app.ui.theme.EmeraldLight
 import com.stickerforge.app.ui.theme.EmeraldPrimary
+import com.stickerforge.app.ui.theme.ErrorRed
 import com.stickerforge.app.ui.theme.SurfaceDark
 import com.stickerforge.app.ui.theme.TextPrimary
 import com.stickerforge.app.ui.theme.TextSecondary
@@ -102,6 +110,9 @@ fun PackDetailScreen(
     val snackbarHostState = remember { SnackbarHostState() }
 
     val activePack = uiState.activePack
+
+    var showRenameDialog by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
 
     // Multi-image photo picker (permite seleccionar hasta 30 de una sola vez)
     val multiImagePicker = rememberLauncherForActivityResult(
@@ -130,50 +141,84 @@ fun PackDetailScreen(
         modifier = modifier.fillMaxSize(),
         topBar = {
             TopAppBar(
+                navigationIcon = {
+                    IconButton(onClick = { viewModel.navigateBackToPacksList() }) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.nav_back),
+                            tint = TextPrimary
+                        )
+                    }
+                },
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Surface(
                             shape = CircleShape,
-                            color = EmeraldPrimary,
+                            color = if (activePack.isAnimated) AnimatedPurple else AccentTeal,
                             modifier = Modifier.size(34.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
-                                    imageVector = Icons.Default.Folder,
+                                    imageVector = if (activePack.isAnimated) Icons.Default.Animation else Icons.Default.Image,
                                     contentDescription = null,
-                                    tint = SurfaceDark,
-                                    modifier = Modifier.size(20.dp)
+                                    tint = Color.White,
+                                    modifier = Modifier.size(18.dp)
                                 )
                             }
                         }
-                        Spacer(modifier = Modifier.width(12.dp))
+                        Spacer(modifier = Modifier.width(10.dp))
                         Column {
                             Text(
-                                text = stringResource(R.string.title_home),
+                                text = activePack.name,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 18.sp,
-                                color = TextPrimary
+                                fontSize = 17.sp,
+                                color = TextPrimary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
-                            Text(
-                                text = "${activePack.name} (${activePack.count}/30)",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = TextSecondary
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = if (activePack.isAnimated) "Pack Animado" else "Pack Estatico",
+                                    fontSize = 11.sp,
+                                    color = if (activePack.isAnimated) AnimatedPurple else AccentTeal,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = " • por ${activePack.publisher}",
+                                    fontSize = 11.sp,
+                                    color = TextSecondary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = " • ${activePack.count}/30",
+                                    fontSize = 11.sp,
+                                    color = TextSecondary
+                                )
+                            }
                         }
                     }
                 },
                 actions = {
-                    // Boton para anadir un nuevo pack
-                    IconButton(
-                        onClick = {
-                            val count = uiState.packs.size + 1
-                            viewModel.createNewPack("Pack $count")
-                        }
-                    ) {
+                    IconButton(onClick = onProceedToPhase3) {
                         Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = "Crear nuevo pack",
+                            imageVector = Icons.Default.Tune,
+                            contentDescription = "Metadatos y Tray Icon (Fase 3)",
                             tint = EmeraldLight
+                        )
+                    }
+                    IconButton(onClick = { showRenameDialog = true }) {
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = "Renombrar pack",
+                            tint = TextSecondary
+                        )
+                    }
+                    IconButton(onClick = { showDeleteConfirm = true }) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Eliminar pack",
+                            tint = TextSecondary
                         )
                     }
                 },
@@ -206,15 +251,6 @@ fun PackDetailScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // Selector de paquetes (Packs tabs) si hay mas de uno
-            if (uiState.packs.size > 1) {
-                PackTabsBar(
-                    packs = uiState.packs,
-                    activePackId = activePack.id,
-                    onSelectPack = { viewModel.selectPack(it) }
-                )
-            }
-
             if (uiState.isProcessing) {
                 Box(
                     modifier = Modifier
@@ -244,17 +280,22 @@ fun PackDetailScreen(
             // Grid de stickers o vista vacia
             if (activePack.stickers.isEmpty()) {
                 EmptyPackView(
+                    isAnimated = activePack.isAnimated,
                     onSelectImages = {
                         multiImagePicker.launch(
                             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                         )
-                    }
+                    },
+                    onProceedToPhase3 = onProceedToPhase3
                 )
             } else {
                 PackStickersGrid(
                     pack = activePack,
                     onEditSticker = { sticker ->
                         viewModel.startEditingSticker(sticker)
+                    },
+                    onEditMetadata = { sticker ->
+                        viewModel.startEditingMetadata(sticker)
                     },
                     onDeleteSticker = { stickerId ->
                         viewModel.removeStickerFromActivePack(stickerId)
@@ -269,34 +310,39 @@ fun PackDetailScreen(
             }
         }
     }
-}
 
-@Composable
-fun PackTabsBar(
-    packs: List<StickerPack>,
-    activePackId: String,
-    onSelectPack: (String) -> Unit
-) {
-    ScrollableTabRow(
-        selectedTabIndex = packs.indexOfFirst { it.id == activePackId }.coerceAtLeast(0),
-        containerColor = SurfaceDark,
-        contentColor = TextPrimary,
-        edgePadding = 16.dp
-    ) {
-        packs.forEach { pack ->
-            val selected = pack.id == activePackId
-            Tab(
-                selected = selected,
-                onClick = { onSelectPack(pack.id) },
-                text = {
-                    Text(
-                        text = "${pack.name} (${pack.count})",
-                        color = if (selected) EmeraldLight else TextSecondary,
-                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
-                    )
-                }
-            )
-        }
+    // Dialogo de edicion de metadatos y emojis del sticker (Fase 3)
+    uiState.editingMetadataSticker?.let { sticker ->
+        StickerMetadataDialog(
+            stickerItem = sticker,
+            onDismiss = { viewModel.dismissEditingMetadata() },
+            onSave = { name, emojis, accessibilityText ->
+                viewModel.updateStickerMetadata(sticker.id, name, emojis, accessibilityText)
+            }
+        )
+    }
+
+    if (showRenameDialog) {
+        EditPackDetailsDialog(
+            currentName = activePack.name,
+            currentPublisher = activePack.publisher,
+            onDismiss = { showRenameDialog = false },
+            onConfirm = { newName, newPublisher ->
+                viewModel.updatePackDetails(activePack.id, newName, newPublisher)
+                showRenameDialog = false
+            }
+        )
+    }
+
+    if (showDeleteConfirm) {
+        DeletePackConfirmDialog(
+            packName = activePack.name,
+            onDismiss = { showDeleteConfirm = false },
+            onConfirm = {
+                viewModel.deletePack(activePack.id)
+                showDeleteConfirm = false
+            }
+        )
     }
 }
 
@@ -304,6 +350,7 @@ fun PackTabsBar(
 fun PackStickersGrid(
     pack: StickerPack,
     onEditSticker: (PackStickerItem) -> Unit,
+    onEditMetadata: (PackStickerItem) -> Unit,
     onDeleteSticker: (String) -> Unit,
     onAddMore: () -> Unit,
     onProceedToPhase3: () -> Unit
@@ -324,7 +371,8 @@ fun PackStickersGrid(
         items(pack.stickers, key = { it.id }) { stickerItem ->
             StickerGridCard(
                 stickerItem = stickerItem,
-                onEdit = { onEditSticker(stickerItem) },
+                onEditCrop = { onEditSticker(stickerItem) },
+                onEditMetadata = { onEditMetadata(stickerItem) },
                 onDelete = { onDeleteSticker(stickerItem.id) }
             )
         }
@@ -354,12 +402,19 @@ fun PackHeaderStatus(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = pack.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = TextPrimary
-                )
+                Column {
+                    Text(
+                        text = pack.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary
+                    )
+                    Text(
+                        text = "Autor: ${pack.publisher} • " + if (pack.isAnimated) "Animado (WebP)" else "Estatico (WebP 512x512)",
+                        fontSize = 11.sp,
+                        color = if (pack.isAnimated) AnimatedPurple else AccentTeal
+                    )
+                }
                 Text(
                     text = stringResource(R.string.pack_count_format, pack.count),
                     style = MaterialTheme.typography.bodyMedium,
@@ -368,7 +423,7 @@ fun PackHeaderStatus(
                 )
             }
 
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             if (!pack.canExport) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -383,6 +438,26 @@ fun PackHeaderStatus(
                         text = stringResource(R.string.pack_min_warning),
                         style = MaterialTheme.typography.bodySmall,
                         color = WarningAmber
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                OutlinedButton(
+                    onClick = onProceedToPhase3,
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = EmeraldLight),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Tune,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Ver Metadatos y Tray Icon (Fase 3)",
+                        fontWeight = FontWeight.SemiBold
                     )
                 }
             } else {
@@ -430,7 +505,8 @@ fun PackHeaderStatus(
 @Composable
 fun StickerGridCard(
     stickerItem: PackStickerItem,
-    onEdit: () -> Unit,
+    onEditCrop: () -> Unit,
+    onEditMetadata: () -> Unit,
     onDelete: () -> Unit
 ) {
     val context = LocalContext.current
@@ -443,12 +519,13 @@ fun StickerGridCard(
         colors = CardDefaults.cardColors(containerColor = CardDark)
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            // Lienzo con patron de transparencia
+            // Lienzo con patron de transparencia (al pulsar abre la edicion de metadatos)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(1f)
-                    .background(SurfaceDark),
+                    .background(SurfaceDark)
+                    .clickable(onClick = onEditMetadata),
                 contentAlignment = Alignment.Center
             ) {
                 TransparencyGrid()
@@ -479,38 +556,79 @@ fun StickerGridCard(
                         modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
                     )
                 }
+
+                // Insignia de emojis asignados o aviso en esquina superior
+                if (stickerItem.emojis.isNotEmpty()) {
+                    Surface(
+                        color = SurfaceDark.copy(alpha = 0.85f),
+                        shape = RoundedCornerShape(bottomStart = 8.dp),
+                        modifier = Modifier.align(Alignment.TopEnd)
+                    ) {
+                        Text(
+                            text = stickerItem.emojis.joinToString(" "),
+                            fontSize = 11.sp,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                } else {
+                    Surface(
+                        color = WarningAmber.copy(alpha = 0.25f),
+                        shape = RoundedCornerShape(bottomStart = 8.dp),
+                        modifier = Modifier.align(Alignment.TopEnd)
+                    ) {
+                        Text(
+                            text = "Sin emojis",
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = WarningAmber,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                        )
+                    }
+                }
             }
 
-            // Barra de acciones: Editar y Eliminar
+            // Barra de acciones: Recortar, Metadatos/Emojis y Eliminar
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(CardDark)
-                    .padding(horizontal = 4.dp, vertical = 2.dp),
+                    .padding(horizontal = 2.dp, vertical = 2.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(
-                    onClick = onEdit,
-                    modifier = Modifier.size(32.dp)
+                    onClick = onEditCrop,
+                    modifier = Modifier.size(28.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Edit,
-                        contentDescription = "Editar y recortar",
+                        imageVector = Icons.Default.Crop,
+                        contentDescription = "Editar recorte",
                         tint = AccentTeal,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(15.dp)
+                    )
+                }
+
+                IconButton(
+                    onClick = onEditMetadata,
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.Label,
+                        contentDescription = "Editar emojis y palabras clave",
+                        tint = EmeraldLight,
+                        modifier = Modifier.size(15.dp)
                     )
                 }
 
                 IconButton(
                     onClick = onDelete,
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier.size(28.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Delete,
                         contentDescription = "Eliminar",
                         tint = Color(0xFFEA4335),
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(15.dp)
                     )
                 }
             }
@@ -551,7 +669,11 @@ fun AddStickerSlotCard(onClick: () -> Unit) {
 }
 
 @Composable
-fun EmptyPackView(onSelectImages: () -> Unit) {
+fun EmptyPackView(
+    isAnimated: Boolean,
+    onSelectImages: () -> Unit,
+    onProceedToPhase3: () -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -566,9 +688,9 @@ fun EmptyPackView(onSelectImages: () -> Unit) {
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
-                    imageVector = Icons.Default.AddPhotoAlternate,
+                    imageVector = if (isAnimated) Icons.Default.Animation else Icons.Default.AddPhotoAlternate,
                     contentDescription = null,
-                    tint = EmeraldPrimary,
+                    tint = if (isAnimated) AnimatedPurple else EmeraldPrimary,
                     modifier = Modifier.size(48.dp)
                 )
             }
@@ -577,7 +699,7 @@ fun EmptyPackView(onSelectImages: () -> Unit) {
         Spacer(modifier = Modifier.height(20.dp))
 
         Text(
-            text = "Paquete Vacio",
+            text = if (isAnimated) "Paquete Animado Vacio" else "Paquete Estatico Vacio",
             style = MaterialTheme.typography.titleLarge,
             color = TextPrimary,
             fontWeight = FontWeight.Bold,
@@ -587,7 +709,11 @@ fun EmptyPackView(onSelectImages: () -> Unit) {
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = stringResource(R.string.empty_pack_hint),
+            text = if (isAnimated) {
+                "Selecciona entre 3 y 30 archivos animados (GIF o WebP animado) para este paquete."
+            } else {
+                stringResource(R.string.empty_pack_hint)
+            },
             style = MaterialTheme.typography.bodyMedium,
             color = TextSecondary,
             textAlign = TextAlign.Center
@@ -597,7 +723,7 @@ fun EmptyPackView(onSelectImages: () -> Unit) {
 
         Button(
             onClick = onSelectImages,
-            colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
+            colors = ButtonDefaults.buttonColors(containerColor = if (isAnimated) AnimatedPurple else EmeraldPrimary),
             shape = RoundedCornerShape(12.dp),
             modifier = Modifier
                 .fillMaxWidth()
@@ -606,15 +732,122 @@ fun EmptyPackView(onSelectImages: () -> Unit) {
             Icon(
                 imageVector = Icons.Default.AddPhotoAlternate,
                 contentDescription = null,
-                tint = SurfaceDark
+                tint = Color.White
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(
                 text = stringResource(R.string.select_image_button),
                 fontWeight = FontWeight.Bold,
                 fontSize = 16.sp,
-                color = SurfaceDark
+                color = Color.White
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        OutlinedButton(
+            onClick = onProceedToPhase3,
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = EmeraldLight),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Tune,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "Ver Metadatos y Tray Icon (Fase 3)",
+                fontWeight = FontWeight.SemiBold
             )
         }
     }
+}
+
+@Composable
+fun EditPackDetailsDialog(
+    currentName: String,
+    currentPublisher: String,
+    onDismiss: () -> Unit,
+    onConfirm: (newName: String, newPublisher: String) -> Unit
+) {
+    var name by remember { mutableStateOf(currentName) }
+    var publisher by remember { mutableStateOf(currentPublisher) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = stringResource(R.string.edit_pack_details_title),
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary
+            )
+        },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text(stringResource(R.string.pack_name_label)) },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        focusedLabelColor = EmeraldLight,
+                        unfocusedLabelColor = TextSecondary,
+                        focusedBorderColor = EmeraldPrimary,
+                        unfocusedBorderColor = Color(0x44FFFFFF)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                OutlinedTextField(
+                    value = publisher,
+                    onValueChange = { publisher = it },
+                    label = { Text(stringResource(R.string.pack_publisher_label)) },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        focusedLabelColor = EmeraldLight,
+                        unfocusedLabelColor = TextSecondary,
+                        focusedBorderColor = EmeraldPrimary,
+                        unfocusedBorderColor = Color(0x44FFFFFF)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onConfirm(
+                        name.ifBlank { currentName },
+                        publisher.ifBlank { currentPublisher }
+                    )
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary)
+            ) {
+                Text(
+                    text = stringResource(R.string.btn_save),
+                    color = SurfaceDark,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(
+                    text = stringResource(R.string.btn_cancel),
+                    color = TextSecondary
+                )
+            }
+        },
+        containerColor = SurfaceDark
+    )
 }

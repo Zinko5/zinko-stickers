@@ -9,6 +9,13 @@ data class PackStickerItem(
     val processedSticker: ProcessedSticker,
     val cropParams: CropParameters = CropParameters(),
     val isAnimated: Boolean = false,
+    val name: String = "",
     val emojis: List<String> = emptyList(),
     val accessibilityText: String = ""
-)
+) {
+    val hasValidEmojis: Boolean
+        get() = emojis.isNotEmpty() && emojis.size <= 3
+
+    val effectiveSearchKeywords: String
+        get() = accessibilityText.ifBlank { name }.take(125)
+}

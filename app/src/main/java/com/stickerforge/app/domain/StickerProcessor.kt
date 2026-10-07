@@ -22,6 +22,10 @@ object StickerProcessor {
     const val MAX_FILE_SIZE_BYTES = 100 * 1024 // 100 KB
     private const val SAFETY_MARGIN_BYTES = 98 * 1024 // 98 KB para garantizar aceptacion estricta
 
+    const val TRAY_SIZE_PX = 96
+    const val MAX_TRAY_SIZE_BYTES = 50 * 1024 // 50 KB
+    private const val TRAY_SAFETY_MARGIN_BYTES = 48 * 1024
+
     /**
      * Procesa una imagen desde una URI aplicando ajuste/recorte 1:1, escalado exacto a 512x512
      * preservando bordes transparentes si la imagen no es cuadrada, y compresion WebP < 100 KB.
@@ -72,6 +76,82 @@ object StickerProcessor {
         } finally {
             if (!loadedBitmap.isRecycled) {
                 loadedBitmap.recycle()
+            }
+        }
+    }
+
+    const val DEFAULT_TRAY_ASSET_NAME = "tray_pepe_smolder.png"
+
+    /**
+     * Copia o genera el icono de bandeja predeterminado adaptado (Pepe Smolder 96x96 px PNG <50 KB con canal alfa).
+     */
+    fun createDefaultPepeTrayIcon(
+        context: Context,
+        packIdentifier: String
+    ): File? {
+        return try {
+            val trayDir = File(context.filesDir, "tray_icons").apply {
+                if (!exists()) mkdirs()
+            }
+            val trayFile = File(trayDir, "tray_${packIdentifier}.png")
+            context.assets.open(DEFAULT_TRAY_ASSET_NAME).use { input ->
+                FileOutputStream(trayFile).use { output ->
+                    input.copyTo(output)
+                    output.flush()
+                }
+            }
+            trayFile
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
+    /**
+     * Genera el icono de bandeja oficial de WhatsApp (96x96 px, <50 KB, canal alfa).
+     */
+    fun generateTrayIcon(
+        context: Context,
+        sourceFile: File,
+        packIdentifier: String
+    ): File? {
+        if (!sourceFile.exists()) return null
+        val sourceBitmap = BitmapFactory.decodeFile(sourceFile.absolutePath) ?: return null
+
+        return try {
+            val trayBitmap = Bitmap.createBitmap(TRAY_SIZE_PX, TRAY_SIZE_PX, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(trayBitmap)
+
+            val srcW = sourceBitmap.width.toFloat()
+            val srcH = sourceBitmap.height.toFloat()
+            val scale = minOf(TRAY_SIZE_PX / srcW, TRAY_SIZE_PX / srcH)
+
+            val matrix = Matrix().apply {
+                postTranslate(-srcW / 2f, -srcH / 2f)
+                postScale(scale, scale)
+                postTranslate(TRAY_SIZE_PX / 2f, TRAY_SIZE_PX / 2f)
+            }
+
+            val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
+            canvas.drawBitmap(sourceBitmap, matrix, paint)
+
+            val trayDir = File(context.filesDir, "tray_icons").apply {
+                if (!exists()) mkdirs()
+            }
+            val trayFile = File(trayDir, "tray_${packIdentifier}.png")
+            FileOutputStream(trayFile).use { fos ->
+                trayBitmap.compress(Bitmap.CompressFormat.PNG, 100, fos)
+                fos.flush()
+            }
+
+            trayBitmap.recycle()
+            trayFile
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        } finally {
+            if (!sourceBitmap.isRecycled) {
+                sourceBitmap.recycle()
             }
         }
     }

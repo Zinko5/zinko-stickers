@@ -1,4 +1,4 @@
-# Product Context: StickerForge
+# Product Context: Zinko Stickers
 
 ## Por que existe este proyecto
 Actualmente, los usuarios de WhatsApp que desean crear stickers a partir de fotos personales se enfrentan a aplicaciones llenas de publicidad invasiva, interfaces confusas o herramientas que generan stickers con parametros incorrectos (tamano indebido, exceso de peso en KB, falta de transparencia o ausencia de metadatos), lo que causa fallos silenciosos o rechazos durante la exportacion a WhatsApp.

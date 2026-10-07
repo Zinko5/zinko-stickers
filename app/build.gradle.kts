@@ -18,6 +18,10 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
+
+        val providerAuth = "${applicationId}.stickercontentprovider"
+        manifestPlaceholders["contentProviderAuthority"] = providerAuth
+        buildConfigField("String", "CONTENT_PROVIDER_AUTHORITY", "\"$providerAuth\"")
     }
 
     buildTypes {
@@ -38,6 +42,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.8"

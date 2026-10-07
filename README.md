@@ -1,4 +1,4 @@
-# Stickers Zinko
+# Zinko Stickers
 
 [![Android](https://img.shields.io/badge/Platform-Android-green.svg)](https://developer.android.com)
 [![Kotlin](https://img.shields.io/badge/Language-Kotlin%201.9+-blue.svg)](https://kotlinlang.org)
@@ -12,7 +12,7 @@ Aplicacion nativa para Android disenada para crear, personalizar y exportar paqu
 
 ## Descripcion
 
-Stickers Zinko permite a los usuarios transformar facilmente fotografias e ilustraciones de su galeria en stickers optimizados para WhatsApp. La aplicacion procesa las imagenes de manera automatica y eficiente para garantizar compatibilidad total, transparencia y alta calidad, evitando fallos de exportacion o rechazos debidos a limitaciones tecnicas de formato o tamano.
+Zinko Stickers permite a los usuarios transformar facilmente fotografias e ilustraciones de su galeria en stickers optimizados para WhatsApp. La aplicacion procesa las imagenes de manera automatica y eficiente para garantizar compatibilidad total, transparencia y alta calidad, evitando fallos de exportacion o rechazos debidos a limitaciones tecnicas de formato o tamano.
 
 ---
 
@@ -38,7 +38,7 @@ Stickers Zinko permite a los usuarios transformar facilmente fotografias e ilust
 
 ## Especificaciones Tecnicas de WhatsApp
 
-| Parametro | Requerimiento Oficial | Manejo en Stickers Zinko |
+| Parametro | Requerimiento Oficial | Manejo en Zinko Stickers |
 |---|---|---|
 | Resolucion del sticker | 512 x 512 px | Redimensionado exacto con preservacion de aspect ratio y relleno transparente |
 | Tamano maximo por sticker | Menos de 100 KB | Compresion WebP optimizada |
@@ -65,7 +65,7 @@ app/src/main/java/com/stickerforge/app/
 │   └── StickerPack.kt
 ├── ui/                 # Capa de presentacion (Jetpack Compose)
 │   ├── components/     # Componentes visuales reutilizables
-│   ├── screens/        # Pantallas (PackDetail, CropScreen, StickerPreview)
+│   ├── screens/        # Pantallas (PackListScreen, PackDetailScreen, CropScreen, StickerPreview)
 │   ├── theme/          # Sistema de diseno (Material Design 3)
 │   └── viewmodel/      # Gestion de estado y logica reactiva
 └── util/               # Utilidades de bajo nivel y helpers de bitmap

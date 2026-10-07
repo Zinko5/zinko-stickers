@@ -1,6 +1,6 @@
 <resources>
-    <string name="app_name">Stickers Zinko</string>
-    <string name="title_home">Stickers Zinko</string>
+    <string name="app_name">Zinko Stickers</string>
+    <string name="title_home">Zinko Stickers</string>
     <string name="subtitle_home">Crea packs de stickers personalizados para WhatsApp</string>
     <string name="select_image_button">Seleccionar Imagenes</string>
     <string name="add_more_images">Anadir Fotos</string>
@@ -16,7 +16,36 @@
     <string name="pack_count_format">%1$d / 30 stickers</string>
     <string name="pack_min_warning">WhatsApp requiere al menos 3 stickers por paquete para poder exportar.</string>
     <string name="pack_valid_ready">Paquete valido para exportar a WhatsApp</string>
-    <string name="action_next_phase">Continuar a Metadatos (Fase 3)</string>
+    <string name="action_next_phase">Revisar y Exportar a WhatsApp (Fase 4)</string>
     <string name="error_mixed_animated">No se pueden mezclar stickers animados y estaticos en el mismo paquete de WhatsApp.</string>
     <string name="error_pack_limit_exceeded">Un paquete de WhatsApp solo puede contener un maximo de 30 stickers.</string>
+
+    <!-- Nuevas cadenas de navegacion y distincion de paquetes -->
+    <string name="title_my_packs">Mis Paquetes</string>
+    <string name="search_packs_hint">Buscar paquetes...</string>
+    <string name="filter_all">Todos</string>
+    <string name="filter_static">Estaticos</string>
+    <string name="filter_animated">Animados</string>
+    <string name="pack_type_static">Estatico</string>
+    <string name="pack_type_animated">Animado</string>
+    <string name="create_new_pack">Crear Paquete</string>
+    <string name="dialog_create_pack_title">Nuevo Paquete de Stickers</string>
+    <string name="pack_name_label">Nombre del paquete</string>
+    <string name="pack_type_label">Tipo de contenido</string>
+    <string name="pack_type_static_desc">Para imagenes fijas (JPG, PNG, WebP estatico)</string>
+    <string name="pack_type_animated_desc">Para stickers animados (GIF, WebP animado)</string>
+    <string name="btn_create">Crear</string>
+    <string name="btn_cancel">Cancelar</string>
+    <string name="btn_delete">Eliminar</string>
+    <string name="delete_pack_title">Eliminar Paquete</string>
+    <string name="delete_pack_confirm">¿Deseas eliminar este paquete y todos sus stickers? Esta accion no se puede deshacer.</string>
+    <string name="no_packs_found">No se encontraron paquetes con ese criterio.</string>
+    <string name="no_packs_created">Aun no tienes paquetes creados. Pulsa Crear Paquete para comenzar.</string>
+    <string name="nav_back">Volver a paquetes</string>
+    <string name="error_incompatible_static">Este paquete es de tipo estatico. No se permiten stickers animados.</string>
+    <string name="error_incompatible_animated">Este paquete es de tipo animado. Solo se permiten stickers animados.</string>
+    <string name="pack_publisher_label">Autor del paquete</string>
+    <string name="pack_publisher_hint">Nombre o alias del autor</string>
+    <string name="edit_pack_details_title">Editar Detalles del Paquete</string>
+    <string name="btn_save">Guardar</string>
 </resources>

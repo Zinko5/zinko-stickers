@@ -66,8 +66,12 @@ class StickerPackTest {
     fun testAnimatedPackType() {
         val staticPack = StickerPack(isAnimated = false)
         assertFalse(staticPack.isAnimated)
+        assertEquals("Estatico", staticPack.typeLabel)
+        assertEquals("Zinko Stickers", staticPack.publisher)
 
         val animatedPack = StickerPack(isAnimated = true)
         assertTrue(animatedPack.isAnimated)
+        assertEquals("Animado", animatedPack.typeLabel)
+        assertEquals("Zinko Stickers", animatedPack.publisher)
     }
 }

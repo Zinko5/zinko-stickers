@@ -2,6 +2,7 @@ package com.stickerforge.app
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.animation.Crossfade
@@ -14,6 +15,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.stickerforge.app.ui.screens.CropScreen
 import com.stickerforge.app.ui.screens.PackDetailScreen
+import com.stickerforge.app.ui.screens.PackListScreen
+import com.stickerforge.app.ui.screens.PackMetadataReviewScreen
 import com.stickerforge.app.ui.theme.StickerForgeTheme
 import com.stickerforge.app.ui.viewmodel.CurrentScreen
 import com.stickerforge.app.ui.viewmodel.StickerViewModel
@@ -33,18 +36,34 @@ class MainActivity : ComponentActivity() {
                     val uiState by stickerViewModel.uiState.collectAsStateWithLifecycle()
                     val context = LocalContext.current
 
+                    BackHandler(enabled = uiState.currentScreen != CurrentScreen.PACKS_LIST) {
+                        when (uiState.currentScreen) {
+                            CurrentScreen.CROP -> stickerViewModel.cancelEditingSticker()
+                            CurrentScreen.METADATA_REVIEW -> stickerViewModel.navigateTo(CurrentScreen.PACK_DETAIL)
+                            CurrentScreen.PACK_DETAIL -> stickerViewModel.navigateBackToPacksList()
+                            CurrentScreen.PREVIEW -> stickerViewModel.navigateTo(CurrentScreen.PACK_DETAIL)
+                            CurrentScreen.PACKS_LIST -> { }
+                        }
+                    }
+
                     Crossfade(
                         targetState = uiState.currentScreen,
                         label = "screen_transition"
                     ) { screen ->
                         when (screen) {
+                            CurrentScreen.PACKS_LIST -> {
+                                PackListScreen(viewModel = stickerViewModel)
+                            }
                             CurrentScreen.PACK_DETAIL -> {
                                 PackDetailScreen(
                                     viewModel = stickerViewModel,
                                     onProceedToPhase3 = {
-                                        // Pasar a Fase 3: Metadatos y empaquetado contents.json
+                                        stickerViewModel.navigateTo(CurrentScreen.METADATA_REVIEW)
                                     }
                                 )
+                            }
+                            CurrentScreen.METADATA_REVIEW -> {
+                                PackMetadataReviewScreen(viewModel = stickerViewModel)
                             }
                             CurrentScreen.CROP -> {
                                 val stickerToEdit = uiState.editingSticker
@@ -66,7 +85,9 @@ class MainActivity : ComponentActivity() {
                             CurrentScreen.PREVIEW -> {
                                 PackDetailScreen(
                                     viewModel = stickerViewModel,
-                                    onProceedToPhase3 = { }
+                                    onProceedToPhase3 = {
+                                        stickerViewModel.navigateTo(CurrentScreen.METADATA_REVIEW)
+                                    }
                                 )
                             }
                         }
