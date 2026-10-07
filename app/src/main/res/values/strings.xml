@@ -1,0 +1,22 @@
+<resources>
+    <string name="app_name">Stickers Zinko</string>
+    <string name="title_home">Stickers Zinko</string>
+    <string name="subtitle_home">Crea packs de stickers personalizados para WhatsApp</string>
+    <string name="select_image_button">Seleccionar Imagenes</string>
+    <string name="add_more_images">Anadir Fotos</string>
+    <string name="change_image_button">Cambiar Imagen</string>
+    <string name="clear_image_button">Descartar</string>
+    <string name="image_info_title">Informacion de la Imagen</string>
+    <string name="image_resolution">Resolucion</string>
+    <string name="image_file_size">Tamano de archivo</string>
+    <string name="image_mime_type">Formato</string>
+    <string name="image_status_valid">Imagen lista para procesar</string>
+    <string name="image_warning_large">Aviso: Imagen superior a 10MB. Se optimizara automaticamente.</string>
+    <string name="empty_pack_hint">Este paquete esta vacio. Selecciona entre 3 y 30 fotos de tu galeria (JPG, PNG o WebP).</string>
+    <string name="pack_count_format">%1$d / 30 stickers</string>
+    <string name="pack_min_warning">WhatsApp requiere al menos 3 stickers por paquete para poder exportar.</string>
+    <string name="pack_valid_ready">Paquete valido para exportar a WhatsApp</string>
+    <string name="action_next_phase">Continuar a Metadatos (Fase 3)</string>
+    <string name="error_mixed_animated">No se pueden mezclar stickers animados y estaticos en el mismo paquete de WhatsApp.</string>
+    <string name="error_pack_limit_exceeded">Un paquete de WhatsApp solo puede contener un maximo de 30 stickers.</string>
+</resources>

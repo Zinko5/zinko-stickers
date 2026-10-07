@@ -1,0 +1,55 @@
+# Built application files
+*.apk
+*.aar
+*.aab
+*.ap_
+*.dex
+
+# Files for the ART/Dalvik VM
+*.class
+
+# Java heap unit test profiling
+*.hprof
+
+# Built files
+build/
+*/build/
+app/build/
+
+# Gradle files
+.gradle/
+buildOutputCleanup/
+
+# Android Studio / IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# Local configuration file (contains Android SDK path and local secrets)
+local.properties
+
+# Log files
+*.log
+
+# Android Studio Navigation editor temp files
+.navigation/
+
+# Android Profiler
+captures/
+
+# Google Services / Firebase (sensitive credentials)
+google-services.json
+
+# Signing files
+*.jks
+*.keystore
+
+# Native build cache
+.cxx/
+.externalNativeBuild/
+
+# OS generated files
+.DS_Store
+Thumbs.db
