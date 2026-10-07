@@ -6,6 +6,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.stickerforge.app.data.StickerPackRepository
 import com.stickerforge.app.domain.ContentsJsonGenerator
 import com.stickerforge.app.domain.ExportResult
 import com.stickerforge.app.domain.StickerProcessor
@@ -47,6 +48,7 @@ data class StickerUiState(
     val selectedFilter: PackFilter = PackFilter.ALL,
     val editingSticker: PackStickerItem? = null,
     val editingMetadataSticker: PackStickerItem? = null,
+    val previewingSticker: PackStickerItem? = null,
     val generatedContentsJson: String? = null,
     val savedContentsJsonFile: java.io.File? = null,
     val isLoading: Boolean = false,
@@ -76,7 +78,9 @@ data class StickerUiState(
         }
 }
 
-class StickerViewModel : ViewModel() {
+class StickerViewModel(
+    private var repository: StickerPackRepository? = null
+) : ViewModel() {
 
     private val defaultPack = StickerPack(name = "Pack 1", isAnimated = false)
     private val _uiState = MutableStateFlow(
@@ -89,6 +93,44 @@ class StickerViewModel : ViewModel() {
 
     private var lastPackCreationTime = 0L
 
+    init {
+        repository?.let { loadSavedData(it) }
+    }
+
+    fun initRepository(context: Context) {
+        if (this.repository != null) return
+        val repo = StickerPackRepository(context.applicationContext)
+        this.repository = repo
+        loadSavedData(repo)
+    }
+
+    fun setRepository(repo: StickerPackRepository) {
+        this.repository = repo
+        loadSavedData(repo)
+    }
+
+    private fun loadSavedData(repo: StickerPackRepository) {
+        val state = repo.loadPacks()
+        if (state != null && state.packs.isNotEmpty()) {
+            val activeId = if (!state.activePackId.isNullOrBlank() && state.packs.any { it.id == state.activePackId }) {
+                state.activePackId
+            } else {
+                state.packs.first().id
+            }
+            _uiState.update { current ->
+                current.copy(
+                    packs = state.packs,
+                    activePackId = activeId
+                )
+            }
+        }
+    }
+
+    private fun persistCurrentState() {
+        val current = _uiState.value
+        repository?.savePacks(current.packs, current.activePackId)
+    }
+
     fun navigateTo(screen: CurrentScreen) {
         _uiState.update { it.copy(currentScreen = screen) }
     }
@@ -100,6 +142,7 @@ class StickerViewModel : ViewModel() {
                 currentScreen = CurrentScreen.PACK_DETAIL
             )
         }
+        persistCurrentState()
     }
 
     fun navigateBackToPacksList() {
@@ -147,6 +190,7 @@ class StickerViewModel : ViewModel() {
                 currentScreen = CurrentScreen.PACK_DETAIL
             )
         }
+        persistCurrentState()
         return true
     }
 
@@ -164,6 +208,7 @@ class StickerViewModel : ViewModel() {
                 currentScreen = if (updatedPacks.isEmpty() || state.activePackId == packId) CurrentScreen.PACKS_LIST else state.currentScreen
             )
         }
+        persistCurrentState()
     }
 
     fun updatePackDetails(packId: String, newName: String, newPublisher: String) {
@@ -180,6 +225,7 @@ class StickerViewModel : ViewModel() {
             }
             state.copy(packs = updated)
         }
+        persistCurrentState()
     }
 
     fun updatePackName(packId: String, newName: String) {
@@ -304,6 +350,7 @@ class StickerViewModel : ViewModel() {
                     packs = updatedPacks
                 )
             }
+            persistCurrentState()
         }
     }
 
@@ -350,6 +397,7 @@ class StickerViewModel : ViewModel() {
                         currentScreen = CurrentScreen.PACK_DETAIL
                     )
                 }
+                persistCurrentState()
             } else {
                 _uiState.update {
                     it.copy(
@@ -381,6 +429,11 @@ class StickerViewModel : ViewModel() {
             }
             state.copy(packs = updatedPacks)
         }
+        persistCurrentState()
+    }
+
+    fun selectStickerForPreview(sticker: PackStickerItem?) {
+        _uiState.update { it.copy(previewingSticker = sticker) }
     }
 
     fun startEditingMetadata(sticker: PackStickerItem) {
@@ -417,6 +470,7 @@ class StickerViewModel : ViewModel() {
                 editingMetadataSticker = null
             )
         }
+        persistCurrentState()
     }
 
     /**
@@ -436,6 +490,7 @@ class StickerViewModel : ViewModel() {
                 }
                 state.copy(packs = updatedPacks)
             }
+            persistCurrentState()
             true
         } else {
             false
@@ -471,6 +526,7 @@ class StickerViewModel : ViewModel() {
                 }
                 state.copy(packs = updatedPacks)
             }
+            persistCurrentState()
             true
         } else {
             false
@@ -497,6 +553,7 @@ class StickerViewModel : ViewModel() {
             }
             state.copy(packs = updatedPacks)
         }
+        persistCurrentState()
     }
 
     fun preparePackContentsJson(context: Context): Boolean {

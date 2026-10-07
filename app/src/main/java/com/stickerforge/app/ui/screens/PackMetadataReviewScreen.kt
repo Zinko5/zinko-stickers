@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.FolderZip
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -140,9 +141,18 @@ fun PackMetadataReviewScreen(
                             color = TextPrimary
                         )
                         Text(
-                            text = "${activePack.name} • Fase 4",
+                            text = "${activePack.name} • Zinko Stickers",
                             fontSize = 11.sp,
                             color = TextSecondary
+                        )
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { viewModel.navigateTo(CurrentScreen.PREVIEW) }) {
+                        Icon(
+                            imageVector = Icons.Default.Visibility,
+                            contentDescription = "Vista Previa de WhatsApp",
+                            tint = AccentTeal
                         )
                     }
                 },
@@ -560,6 +570,28 @@ fun PackMetadataReviewScreen(
                     }
 
                     val installedPackages = remember(context) { WhatsAppExporter.getInstalledWhatsAppPackages(context) }
+
+                    OutlinedButton(
+                        onClick = { viewModel.navigateTo(CurrentScreen.PREVIEW) },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = AccentTeal),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Visibility,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Simular Chat / Vista Previa de WhatsApp",
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
 
                     if (installedPackages.isNotEmpty()) {
                         installedPackages.forEach { pkg ->

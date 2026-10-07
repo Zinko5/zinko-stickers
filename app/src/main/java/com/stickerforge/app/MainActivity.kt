@@ -17,6 +17,7 @@ import com.stickerforge.app.ui.screens.CropScreen
 import com.stickerforge.app.ui.screens.PackDetailScreen
 import com.stickerforge.app.ui.screens.PackListScreen
 import com.stickerforge.app.ui.screens.PackMetadataReviewScreen
+import com.stickerforge.app.ui.screens.PackPreviewScreen
 import com.stickerforge.app.ui.theme.StickerForgeTheme
 import com.stickerforge.app.ui.viewmodel.CurrentScreen
 import com.stickerforge.app.ui.viewmodel.StickerViewModel
@@ -27,6 +28,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        stickerViewModel.initRepository(applicationContext)
         setContent {
             StickerForgeTheme {
                 Surface(
@@ -83,9 +85,12 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                             CurrentScreen.PREVIEW -> {
-                                PackDetailScreen(
+                                PackPreviewScreen(
                                     viewModel = stickerViewModel,
-                                    onProceedToPhase3 = {
+                                    onBack = {
+                                        stickerViewModel.navigateTo(CurrentScreen.PACK_DETAIL)
+                                    },
+                                    onProceedToExport = {
                                         stickerViewModel.navigateTo(CurrentScreen.METADATA_REVIEW)
                                     }
                                 )

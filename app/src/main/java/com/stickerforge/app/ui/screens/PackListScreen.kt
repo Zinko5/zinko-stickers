@@ -1,5 +1,6 @@
 package com.stickerforge.app.ui.screens
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -67,6 +68,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -159,20 +161,14 @@ fun PackListScreen(
                 TopAppBar(
                     title = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Surface(
-                                shape = CircleShape,
-                                color = EmeraldPrimary,
-                                modifier = Modifier.size(36.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = Icons.Default.Collections,
-                                        contentDescription = null,
-                                        tint = SurfaceDark,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                            }
+                            Image(
+                                painter = painterResource(R.drawable.app_logo),
+                                contentDescription = stringResource(R.string.app_name),
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(RoundedCornerShape(8.dp)),
+                                contentScale = ContentScale.Crop
+                            )
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
                                 Text(

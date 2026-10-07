@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.Warning
 import com.stickerforge.app.ui.components.StickerMetadataDialog
 import androidx.compose.material3.AlertDialog
@@ -96,6 +97,7 @@ import com.stickerforge.app.ui.theme.SurfaceDark
 import com.stickerforge.app.ui.theme.TextPrimary
 import com.stickerforge.app.ui.theme.TextSecondary
 import com.stickerforge.app.ui.theme.WarningAmber
+import com.stickerforge.app.ui.viewmodel.CurrentScreen
 import com.stickerforge.app.ui.viewmodel.StickerViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -200,6 +202,13 @@ fun PackDetailScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = { viewModel.navigateTo(CurrentScreen.PREVIEW) }) {
+                        Icon(
+                            imageVector = Icons.Default.Visibility,
+                            contentDescription = "Vista Previa de WhatsApp",
+                            tint = AccentTeal
+                        )
+                    }
                     IconButton(onClick = onProceedToPhase3) {
                         Icon(
                             imageVector = Icons.Default.Tune,

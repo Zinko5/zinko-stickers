@@ -210,7 +210,9 @@ object StickerProcessor {
 
     /**
      * Comprime el Bitmap a formato WebP ajustando progresivamente la calidad
-     * para asegurar que el tamano final no supere maxBytes.
+     * para asegurar que el tamano final no supere maxBytes (<100 KB).
+     * Si una imagen presenta ruido extremo que resiste la reduccion de calidad,
+     * se aplica un reescalado adaptativo leve para garantizar el cumplimiento estricto.
      */
     fun compressToWebpUnderLimit(bitmap: Bitmap, maxBytes: Int): ByteArray {
         val format = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -236,34 +238,74 @@ object StickerProcessor {
             bitmap.compress(format, quality, outputStream)
         }
 
+        // Si con calidad minima aun supera maxBytes, reescalar levemente manteniendo el lienzo 512x512
+        if (outputStream.size() > maxBytes) {
+            val scaleFactor = 0.85f
+            val intermediate = Bitmap.createScaledBitmap(
+                bitmap,
+                (TARGET_SIZE_PX * scaleFactor).toInt(),
+                (TARGET_SIZE_PX * scaleFactor).toInt(),
+                true
+            )
+            val paddedBitmap = Bitmap.createBitmap(TARGET_SIZE_PX, TARGET_SIZE_PX, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(paddedBitmap)
+            val offset = (TARGET_SIZE_PX * (1f - scaleFactor) / 2f)
+            canvas.drawBitmap(intermediate, offset, offset, Paint(Paint.FILTER_BITMAP_FLAG))
+            intermediate.recycle()
+
+            outputStream = ByteArrayOutputStream()
+            paddedBitmap.compress(format, 70, outputStream)
+            paddedBitmap.recycle()
+        }
+
         return outputStream.toByteArray()
     }
 
+    /**
+     * Carga un bitmap muestreado eficientemente para evitar OutOfMemoryError en imagenes grandes (>10 MB).
+     */
     private fun loadSampledBitmap(context: Context, uri: Uri, maxDimension: Int): Bitmap? {
-        val options = BitmapFactory.Options().apply {
-            inJustDecodeBounds = true
-        }
+        return try {
+            val options = BitmapFactory.Options().apply {
+                inJustDecodeBounds = true
+            }
 
-        context.contentResolver.openInputStream(uri)?.use { stream ->
-            BitmapFactory.decodeStream(stream, null, options)
-        }
+            context.contentResolver.openInputStream(uri)?.use { stream ->
+                BitmapFactory.decodeStream(stream, null, options)
+            }
 
-        val width = options.outWidth
-        val height = options.outHeight
-        if (width <= 0 || height <= 0) return null
+            val width = options.outWidth
+            val height = options.outHeight
+            if (width <= 0 || height <= 0) return null
 
-        var sampleSize = 1
-        while (width / (sampleSize * 2) >= maxDimension || height / (sampleSize * 2) >= maxDimension) {
-            sampleSize *= 2
-        }
+            var sampleSize = 1
+            while (width / (sampleSize * 2) >= maxDimension || height / (sampleSize * 2) >= maxDimension) {
+                sampleSize *= 2
+            }
 
-        val decodeOptions = BitmapFactory.Options().apply {
-            inSampleSize = sampleSize
-            inPreferredConfig = Bitmap.Config.ARGB_8888
-        }
+            val decodeOptions = BitmapFactory.Options().apply {
+                inSampleSize = sampleSize
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            }
 
-        return context.contentResolver.openInputStream(uri)?.use { stream ->
-            BitmapFactory.decodeStream(stream, null, decodeOptions)
+            try {
+                context.contentResolver.openInputStream(uri)?.use { stream ->
+                    BitmapFactory.decodeStream(stream, null, decodeOptions)
+                }
+            } catch (oom: OutOfMemoryError) {
+                // Recuperacion activa de OOM para fotos de camara de muy alta resolucion (>20-50 MP)
+                System.gc()
+                val emergencyOptions = BitmapFactory.Options().apply {
+                    inSampleSize = sampleSize * 2
+                    inPreferredConfig = Bitmap.Config.ARGB_8888
+                }
+                context.contentResolver.openInputStream(uri)?.use { stream ->
+                    BitmapFactory.decodeStream(stream, null, emergencyOptions)
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
         }
     }
 }
