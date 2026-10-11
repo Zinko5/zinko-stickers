@@ -27,24 +27,51 @@ object StickerProcessor {
     private const val TRAY_SAFETY_MARGIN_BYTES = 48 * 1024
 
     /**
-     * Procesa una imagen desde una URI aplicando ajuste/recorte 1:1, escalado exacto a 512x512
-     * preservando bordes transparentes si la imagen no es cuadrada, y compresion WebP < 100 KB.
+     * Procesa una imagen o video desde una URI aplicando ajuste/recorte 1:1, escalado exacto a 512x512
+     * preservando bordes transparentes si la imagen no es cuadrada, y compresion WebP (<100 KB para estaticos, <500 KB para animados).
      */
     fun processImage(
         context: Context,
         sourceUri: Uri,
-        cropParameters: CropParameters = CropParameters()
+        cropParameters: CropParameters = CropParameters(),
+        isAnimated: Boolean = false
     ): ProcessedSticker? {
+        val stickersDir = File(context.filesDir, "stickers").apply {
+            if (!exists()) mkdirs()
+        }
+        val fileName = "sticker_${System.currentTimeMillis()}_${UUID.randomUUID().toString().take(6)}.webp"
+        val outputFile = File(stickersDir, fileName)
+
+        if (isAnimated) {
+            val success = AnimatedWebpEncoder.processAnimatedMedia(
+                context = context,
+                sourceUri = sourceUri,
+                outputFile = outputFile,
+                cropParams = cropParameters
+            )
+            if (success && outputFile.exists() && outputFile.length() > 0) {
+                val contentUri = try {
+                    FileProvider.getUriForFile(
+                        context,
+                        "${context.packageName}.fileprovider",
+                        outputFile
+                    )
+                } catch (e: Exception) {
+                    Uri.fromFile(outputFile)
+                }
+                return ProcessedSticker(
+                    file = outputFile,
+                    uri = contentUri,
+                    width = TARGET_SIZE_PX,
+                    height = TARGET_SIZE_PX,
+                    sizeBytes = outputFile.length()
+                )
+            }
+        }
+
         val loadedBitmap = loadSampledBitmap(context, sourceUri, maxDimension = 1536) ?: return null
         return try {
             val (finalBitmap, webpBytes) = processBitmap(loadedBitmap, cropParameters)
-
-            // Guardar en el directorio interno seguro de la app
-            val stickersDir = File(context.filesDir, "stickers").apply {
-                if (!exists()) mkdirs()
-            }
-            val fileName = "sticker_${System.currentTimeMillis()}_${UUID.randomUUID().toString().take(6)}.webp"
-            val outputFile = File(stickersDir, fileName)
 
             FileOutputStream(outputFile).use { fos ->
                 fos.write(webpBytes)
@@ -264,7 +291,7 @@ object StickerProcessor {
     /**
      * Carga un bitmap muestreado eficientemente para evitar OutOfMemoryError en imagenes grandes (>10 MB).
      */
-    private fun loadSampledBitmap(context: Context, uri: Uri, maxDimension: Int): Bitmap? {
+    internal fun loadSampledBitmap(context: Context, uri: Uri, maxDimension: Int): Bitmap? {
         return try {
             val options = BitmapFactory.Options().apply {
                 inJustDecodeBounds = true

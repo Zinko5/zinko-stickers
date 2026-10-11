@@ -53,7 +53,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.os.Build
 import coil.compose.AsyncImage
+import coil.decode.GifDecoder
+import coil.decode.ImageDecoderDecoder
 import coil.request.ImageRequest
 import com.stickerforge.app.model.PackStickerItem
 import com.stickerforge.app.ui.theme.AccentTeal
@@ -118,6 +121,13 @@ fun StickerMetadataDialog(
                         AsyncImage(
                             model = ImageRequest.Builder(context)
                                 .data(stickerItem.processedSticker.file)
+                                .decoderFactory(
+                                    if (Build.VERSION.SDK_INT >= 28) {
+                                        ImageDecoderDecoder.Factory()
+                                    } else {
+                                        GifDecoder.Factory()
+                                    }
+                                )
                                 .crossfade(true)
                                 .build(),
                             contentDescription = null,

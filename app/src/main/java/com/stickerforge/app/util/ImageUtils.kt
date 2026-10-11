@@ -28,26 +28,47 @@ object ImageUtils {
 
             val mimeType = contentResolver.getType(uri) ?: "image/*"
 
-            // Detectar si la imagen es animada (GIF o WebP animado)
+            // Detectar si el medio es animado (Video, GIF o WebP animado)
             val isAnimated = isAnimatedImage(contentResolver, uri, mimeType)
 
-            // Read image dimensions without allocating full bitmap in memory (prevents OOM on large >10MB images)
-            val options = BitmapFactory.Options().apply {
-                inJustDecodeBounds = true
-            }
+            var width = 0
+            var height = 0
 
-            contentResolver.openInputStream(uri)?.use { inputStream ->
-                BitmapFactory.decodeStream(inputStream, null, options)
-            }
+            if (mimeType.startsWith("video/")) {
+                val retriever = android.media.MediaMetadataRetriever()
+                try {
+                    contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
+                        retriever.setDataSource(pfd.fileDescriptor)
+                        val wStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
+                        val hStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
+                        width = wStr?.toIntOrNull() ?: 512
+                        height = hStr?.toIntOrNull() ?: 512
+                    }
+                } catch (e: Exception) {
+                    width = 512
+                    height = 512
+                } finally {
+                    try { retriever.release() } catch (e: Exception) {}
+                }
+            } else {
+                // Read image dimensions without allocating full bitmap in memory (prevents OOM on large >10MB images)
+                val options = BitmapFactory.Options().apply {
+                    inJustDecodeBounds = true
+                }
 
-            val width = options.outWidth
-            val height = options.outHeight
+                contentResolver.openInputStream(uri)?.use { inputStream ->
+                    BitmapFactory.decodeStream(inputStream, null, options)
+                }
+
+                width = if (options.outWidth > 0) options.outWidth else 0
+                height = if (options.outHeight > 0) options.outHeight else 0
+            }
 
             ImageMetadata(
                 uri = uri,
                 fileName = fileName,
-                width = if (width > 0) width else 0,
-                height = if (height > 0) height else 0,
+                width = width,
+                height = height,
                 sizeBytes = fileSize,
                 mimeType = mimeType,
                 isAnimated = isAnimated
@@ -60,6 +81,7 @@ object ImageUtils {
 
     fun isAnimatedImage(contentResolver: ContentResolver, uri: Uri, mimeType: String? = null): Boolean {
         val resolvedMime = (mimeType ?: contentResolver.getType(uri))?.lowercase() ?: ""
+        if (resolvedMime.startsWith("video/")) return true
         if (resolvedMime == "image/gif") return true
         if (resolvedMime == "image/webp") {
             try {

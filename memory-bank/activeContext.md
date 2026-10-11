@@ -1,15 +1,24 @@
 # Active Context: Zinko Stickers
 
 ## Foco Actual
-- Finalizada con exito la Fase 5: Pulido completo, persistencia en disco de paquetes y stickers (`StickerPackRepository`), adopcion del logo oficial de Zinko Stickers en toda la app y mipmaps del sistema, simulacion interactiva de chat de WhatsApp (`PackPreviewScreen`), blindaje de memoria contra imagenes pesadas (>10 MB / OOM) y suite de 26 pruebas unitarias exitosas.
-- Proyecto completamente operativo y listo para uso y distribucion.
+- Soporte completo para stickers y paquetes animados de WhatsApp: generacion de archivos Animated WebP (512x512 px, <500 KB, loop=0, duracion <=6s), seleccion y extraccion de videos (MP4/WebM) y GIFs animados, visualizacion en tiempo real con `coil-gif` y exportacion validada a WhatsApp.
+- Proyecto completamente operativo y verificado con 27 pruebas unitarias.
 
 ## Cambios Recientes
-- Persistencia de Datos (`StickerPackRepository`):
-  - Almacenamiento continuo y recuperacion del estado completo de paquetes, stickers, recortes, tray icons y seleccion activa en `packs_metadata.json`.
-  - Escritura atomica mediante archivos temporales `.tmp` para prevenir corrupcion de datos en cierres abruptos.
-  - Sincronizacion bidireccional inmediata en `StickerViewModel` para que cada modificacion (crear, editar, borrar, anadir stickers) persista entre reinicios de la aplicacion.
-  - Migracion transparente desde paquetes exportados en `StickerPackStorage`.
+- Visualizacion en tiempo real de Stickers Animados en la UI:
+  - Incorporacion de `io.coil-kt:coil-gif:2.6.0` en `build.gradle.kts`.
+  - Creacion de `StickerForgeApp` (`Application`, `ImageLoaderFactory`) con `ImageDecoderDecoder.Factory` (API 28+) y `GifDecoder.Factory` (API <28).
+  - Configuracion explicita de `decoderFactory` en `PackDetailScreen`, `PackPreviewScreen`, `CropScreen` y `StickerMetadataDialog` para que los stickers animados se reproduzcan fluidamente en la cuadricula y vistas previas en vez de renderizarse vacios por limitacion de `BitmapFactory`.
+- Soporte y Generador de Stickers Animados (`AnimatedWebpEncoder`):
+  - Extraccion real de fotogramas de GIFs animados mediante `android.graphics.Movie`.
+  - Extraccion fluida de fotogramas de video con `MediaMetadataRetriever` usando `OPTION_CLOSEST`.
+  - Muxer puro en Kotlin para formato WebP Extendido (`RIFF...WEBP`) con chunks `VP8X`, `ANIM` y `ANMF` (sub-chunks `ALPH` y `VP8`/`VP8L`).
+  - Compresion adaptativa WebP para asegurar que cada sticker animado cumpla estrictamente con el limite maximo de 500 KB de WhatsApp.
+- Selector Multimedia Inteligente (`PackDetailScreen`):
+  - Actualizado para solicitar `PickVisualMedia.ImageAndVideo` cuando el paquete activo es animado (`isAnimated == true`).
+- Integracion en ViewModel y Flujo de Exportacion:
+  - Enrutamiento transparente en `StickerViewModel` pasando el flag `isAnim` durante la adicion y edicion de stickers.
+  - Exportacion coherente con `animated_sticker_pack: true` en `contents.json` y `1` en `StickerContentProvider`.
 - Identidad Visual y Logo Oficial:
   - Generacion de conjunto completo de mipmaps (`mdpi`, `hdpi`, `xhdpi`, `xxhdpi`, `xxxhdpi`) para `ic_launcher.png`, `ic_launcher_round.png` y `ic_launcher_foreground.png` a partir de `logo-zinko-stickers-cuadrado-512x512.png`.
   - Configuracion de adaptive icon oficial con fondo `#0373B5` y safe zone de 72dp centrada.

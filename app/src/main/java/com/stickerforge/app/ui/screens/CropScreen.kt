@@ -61,7 +61,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.os.Build
 import coil.compose.AsyncImage
+import coil.decode.GifDecoder
+import coil.decode.ImageDecoderDecoder
 import coil.request.ImageRequest
 import com.stickerforge.app.model.CropParameters
 import com.stickerforge.app.model.PackStickerItem
@@ -164,7 +167,14 @@ fun CropScreen(
                 ) {
                     AsyncImage(
                         model = ImageRequest.Builder(context)
-                            .data(stickerItem.sourceUri)
+                            .data(if (stickerItem.isAnimated) stickerItem.processedSticker.file else stickerItem.sourceUri)
+                            .decoderFactory(
+                                if (Build.VERSION.SDK_INT >= 28) {
+                                    ImageDecoderDecoder.Factory()
+                                } else {
+                                    GifDecoder.Factory()
+                                }
+                            )
                             .crossfade(true)
                             .build(),
                         contentDescription = "Recorte de sticker",

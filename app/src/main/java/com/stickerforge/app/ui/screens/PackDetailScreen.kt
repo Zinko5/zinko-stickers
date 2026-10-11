@@ -82,7 +82,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import coil.decode.GifDecoder
+import coil.decode.ImageDecoderDecoder
 import coil.request.ImageRequest
+import android.os.Build
 import com.stickerforge.app.R
 import com.stickerforge.app.model.PackStickerItem
 import com.stickerforge.app.model.StickerPack
@@ -239,7 +242,10 @@ fun PackDetailScreen(
                 FloatingActionButton(
                     onClick = {
                         multiImagePicker.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            PickVisualMediaRequest(
+                                if (activePack.isAnimated) ActivityResultContracts.PickVisualMedia.ImageAndVideo
+                                else ActivityResultContracts.PickVisualMedia.ImageOnly
+                            )
                         )
                     },
                     containerColor = EmeraldPrimary,
@@ -292,7 +298,10 @@ fun PackDetailScreen(
                     isAnimated = activePack.isAnimated,
                     onSelectImages = {
                         multiImagePicker.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            PickVisualMediaRequest(
+                                if (activePack.isAnimated) ActivityResultContracts.PickVisualMedia.ImageAndVideo
+                                else ActivityResultContracts.PickVisualMedia.ImageOnly
+                            )
                         )
                     },
                     onProceedToPhase3 = onProceedToPhase3
@@ -311,7 +320,10 @@ fun PackDetailScreen(
                     },
                     onAddMore = {
                         multiImagePicker.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            PickVisualMediaRequest(
+                                if (activePack.isAnimated) ActivityResultContracts.PickVisualMedia.ImageAndVideo
+                                else ActivityResultContracts.PickVisualMedia.ImageOnly
+                            )
                         )
                     },
                     onProceedToPhase3 = onProceedToPhase3
@@ -542,6 +554,13 @@ fun StickerGridCard(
                 AsyncImage(
                     model = ImageRequest.Builder(context)
                         .data(stickerItem.processedSticker.file)
+                        .decoderFactory(
+                            if (Build.VERSION.SDK_INT >= 28) {
+                                ImageDecoderDecoder.Factory()
+                            } else {
+                                GifDecoder.Factory()
+                            }
+                        )
                         .crossfade(true)
                         .build(),
                     contentDescription = "Sticker",

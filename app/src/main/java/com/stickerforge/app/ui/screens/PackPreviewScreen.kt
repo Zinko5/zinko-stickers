@@ -70,7 +70,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import android.os.Build
 import coil.compose.AsyncImage
+import coil.decode.GifDecoder
+import coil.decode.ImageDecoderDecoder
 import coil.request.ImageRequest
 import com.stickerforge.app.model.PackStickerItem
 import com.stickerforge.app.ui.components.TransparencyGrid
@@ -379,6 +382,13 @@ private fun ChatSimulationView(
                     AsyncImage(
                         model = ImageRequest.Builder(context)
                             .data(item.processedSticker.file)
+                            .decoderFactory(
+                                if (Build.VERSION.SDK_INT >= 28) {
+                                    ImageDecoderDecoder.Factory()
+                                } else {
+                                    GifDecoder.Factory()
+                                }
+                            )
                             .crossfade(true)
                             .build(),
                         contentDescription = item.effectiveSearchKeywords,
@@ -458,6 +468,13 @@ private fun KeyboardTraySimulationView(
                     AsyncImage(
                         model = ImageRequest.Builder(context)
                             .data(item.processedSticker.file)
+                            .decoderFactory(
+                                if (Build.VERSION.SDK_INT >= 28) {
+                                    ImageDecoderDecoder.Factory()
+                                } else {
+                                    GifDecoder.Factory()
+                                }
+                            )
                             .crossfade(true)
                             .build(),
                         contentDescription = item.effectiveSearchKeywords,

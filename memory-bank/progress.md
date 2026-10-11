@@ -15,12 +15,15 @@
 | Fase 2.5 | Arquitectura Zinko Stickers | Completado | Nombre "Zinko Stickers", PackListScreen con buscador/filtros, distincion estatico/animado y debounce anti-cuelgues |
 | Fase 3 | Metadatos y empaquetado | Completado | Gestion de nombres, 1-3 emojis, accesibilidad (<=125 chars), tray icon (96x96 px <50 KB) y generacion `contents.json` |
 | Fase 4 | Exportacion a WhatsApp | Completado | `StickerContentProvider` seguro, Intent oficial `ENABLE_STICKER_PACK`, deteccion de WhatsApp y W4B |
-| Fase 5 | Pulido y validaciones | Completado | Persistencia local completa, logo Zinko en mipmaps y UI, PackPreviewScreen con simulacion de chat, proteccion OOM para >10 MB y 26 tests |
+| Fase 5 | Pulido y validaciones | Completado | Persistencia local completa, logo Zinko en mipmaps y UI, PackPreviewScreen con simulacion de chat, proteccion OOM para >10 MB y 27 tests |
+| Extra | Stickers Animados | Completado | Codificador WebP Animado (RIFF/VP8X/ANIM/ANMF <500 KB), decodificador ImageDecoder en Coil para reproduccion en vivo en UI, extraccion GIF con Movie y exportacion a WhatsApp |
 
 ## Criterios de Aceptacion (Progreso)
 - [x] Al exportar, WhatsApp recibe e instala el paquete de stickers a traves del Intent oficial y ContentProvider (Fase 4).
-- [x] Cada sticker generado tiene dimensiones exactas de 512x512 pixeles.
-- [x] Cada sticker pesa menos de 100 KB.
+- [x] Cada sticker estatico generado tiene dimensiones exactas de 512x512 pixeles y pesa menos de 100 KB.
+- [x] Cada sticker animado generado es un archivo Animated WebP estricto de 512x512 pixeles y pesa menos de 500 KB (loop=0).
+- [x] Los paquetes animados admiten seleccion y procesamiento de videos y GIFs.
+- [x] Los stickers animados se reproducen y visualizan en vivo en la interfaz de la aplicacion (grid, preview de chat, crop y metadatos).
 - [x] El paquete contiene entre 3 y 30 stickers (verificado y validado en UI).
 - [x] Los stickers tienen fondo transparente.
 - [x] Los stickers son configurables con palabras clave (<=125 chars) y 1 a 3 emojis asociados.
@@ -32,4 +35,4 @@
 - [x] Vista previa funcional con simulacion de chat y alternador de fondos de WhatsApp.
 
 ## Problemas Conocidos / Bloqueos
-- Ninguno. 26 pruebas unitarias superadas al 100% y APK de depuracion generado limpiamente en `app/build/outputs/apk/debug/app-debug.apk`.
+- Ninguno. 27 pruebas unitarias superadas al 100% y APK de depuracion generado limpiamente en `app/build/outputs/apk/debug/app-debug.apk`.

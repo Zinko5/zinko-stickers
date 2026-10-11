@@ -323,7 +323,12 @@ class StickerViewModel(
                     val uri = item.first
                     val isAnim = item.second
                     val defaultCrop = CropParameters()
-                    val processed = StickerProcessor.processImage(context, uri, defaultCrop)
+                    val processed = StickerProcessor.processImage(
+                        context = context,
+                        sourceUri = uri,
+                        cropParameters = defaultCrop,
+                        isAnimated = isAnim
+                    )
                     if (processed != null) {
                         processedItems.add(
                             PackStickerItem(
@@ -370,7 +375,12 @@ class StickerViewModel(
 
         viewModelScope.launch {
             val reprocessed = withContext(Dispatchers.IO) {
-                StickerProcessor.processImage(context, currentSticker.sourceUri, newCropParameters)
+                StickerProcessor.processImage(
+                    context = context,
+                    sourceUri = currentSticker.sourceUri,
+                    cropParameters = newCropParameters,
+                    isAnimated = currentSticker.isAnimated
+                )
             }
 
             if (reprocessed != null) {
