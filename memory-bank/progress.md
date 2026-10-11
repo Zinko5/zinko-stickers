@@ -39,6 +39,8 @@
 - [x] Proteccion contra ataques de Zip Slip durante la extraccion de respaldos comprimidos.
 - [x] Resolucion automatica de colisiones de identificadores al restaurar respaldos.
 - [x] Documentacion tecnica exhaustiva en `Sticker_Pack_Backup_Specification.md`.
+- [x] Indicador sutil de paquetes exportados a WhatsApp ("En WhatsApp" / "Instalado") en la pantalla principal.
+- [x] Boton directo de exportacion a WhatsApp en cada tarjeta de paquete sin requerir abrir cada uno.
 
 ## Problemas Conocidos / Bloqueos
 - Ninguno. 32 pruebas unitarias superadas al 100% y APK de depuracion generado limpiamente en `app/build/outputs/apk/debug/app-debug.apk`.

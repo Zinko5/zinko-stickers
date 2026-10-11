@@ -22,6 +22,11 @@
 - Selector y Relleno de Emojis:
   - Modificado el autorrelleno en `StickerViewModel.autoAssignDefaultEmojisToUnlabeledStickers`: ahora asigna de manera uniforme el emoji de cuadrado blanco (⬜) en lugar de una seleccion aleatoria cuando los stickers no poseen emojis asignados.
   - Actualizado `StickerMetadataDialog` anadiendo una categoria destacada "Populares" con todos los emojis solicitados por el usuario (😂, 😊, 😮, 😭, 😡, 🐸, 💃, 👌, 🗿, 😨, ❤️, 🔥, 😴, 🤔, 🤡, 😎, 🙏, 🤦, 💀, ⬜) para seleccion rapida y manual.
+- Registro y Exportacion Directa a WhatsApp desde la Pantalla Principal:
+  - Anadido campo persistente `isExportedToWhatsApp` a `StickerPack` guardado y restaurado en `StickerPackRepository` y respaldos ZIP.
+  - Indicador visual sutil "En WhatsApp" con icono de verificacion en la esquina superior derecha de las tarjetas en `PackListScreen`, y cambio de estado a "Instalado" en el pie de la tarjeta.
+  - Boton de accion rapida (icono de envio) en cada tarjeta para exportar directamente a WhatsApp sin necesidad de abrir la pantalla de edicion de cada paquete.
+  - Auto-preparacion transparente: si el paquete no tenia tray icon o emojis asignados, se generan/asignan automaticamente antes de enviar el Intent oficial.
 - Pruebas Unitarias y Build:
   - 32 pruebas unitarias ejecutadas y superadas al 100%.
   - Generacion exitosa del APK de depuracion en `app/build/outputs/apk/debug/app-debug.apk`.

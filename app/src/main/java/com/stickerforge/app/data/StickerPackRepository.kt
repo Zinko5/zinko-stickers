@@ -62,6 +62,7 @@ class StickerPackRepository(
                 packObj.put("privacy_policy_website", pack.privacyPolicyWebsite)
                 packObj.put("license_agreement_website", pack.licenseAgreementWebsite)
                 packObj.put("is_animated", pack.isAnimated)
+                packObj.put("is_exported_to_whatsapp", pack.isExportedToWhatsApp)
                 packObj.put("tray_image_file", pack.trayImageFile?.absolutePath ?: "")
 
                 val stickersArray = JSONArray()
@@ -150,6 +151,7 @@ class StickerPackRepository(
                 val privacyPolicy = pObj.optString("privacy_policy_website", "")
                 val licenseAgreement = pObj.optString("license_agreement_website", "")
                 val isAnimated = pObj.optBoolean("is_animated", false)
+                val isExported = pObj.optBoolean("is_exported_to_whatsapp", false)
                 val trayPath = pObj.optString("tray_image_file", "")
                 val trayFile = if (trayPath.isNotBlank()) File(trayPath).takeIf { it.exists() } else null
 
@@ -228,6 +230,7 @@ class StickerPackRepository(
                         privacyPolicyWebsite = privacyPolicy,
                         licenseAgreementWebsite = licenseAgreement,
                         isAnimated = isAnimated,
+                        isExportedToWhatsApp = isExported,
                         trayImageFile = trayFile,
                         stickers = stickersList
                     )

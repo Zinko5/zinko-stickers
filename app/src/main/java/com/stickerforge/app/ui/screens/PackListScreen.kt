@@ -43,7 +43,10 @@ import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Warning
+import com.stickerforge.app.domain.WhatsAppExporter
+import android.widget.Toast
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -144,6 +147,32 @@ fun PackListScreen(
     ) { sourceUri ->
         if (sourceUri != null) {
             viewModel.importBackup(context, sourceUri)
+        }
+    }
+
+    var packForExportSelection by remember { mutableStateOf<StickerPack?>(null) }
+    var exportingPackId by remember { mutableStateOf<String?>(null) }
+
+    // Launcher para exportar paquete directamente a WhatsApp
+    val exportWhatsAppLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val exportResult = WhatsAppExporter.parseExportResult(result.resultCode, result.data)
+        viewModel.handleExportResult(exportResult, exportingPackId)
+        exportingPackId = null
+    }
+
+    LaunchedEffect(uiState.exportSuccessMessage) {
+        uiState.exportSuccessMessage?.let { msg ->
+            snackbarHostState.showSnackbar(msg)
+            viewModel.dismissExportMessages()
+        }
+    }
+
+    LaunchedEffect(uiState.exportErrorMessage) {
+        uiState.exportErrorMessage?.let { msg ->
+            snackbarHostState.showSnackbar(msg)
+            viewModel.dismissExportMessages()
         }
     }
 
@@ -388,12 +417,108 @@ fun PackListScreen(
                         PackCardItem(
                             pack = pack,
                             onClick = { viewModel.openPack(pack.id) },
-                            onDelete = { packToDelete = pack }
+                            onDelete = { packToDelete = pack },
+                            onExportToWhatsApp = {
+                                val installed = WhatsAppExporter.getInstalledWhatsAppPackages(context)
+                                if (installed.isEmpty()) {
+                                    val (intent, issues) = viewModel.prepareAndGetExportIntent(context, targetPackage = null, packId = pack.id)
+                                    if (intent != null) {
+                                        exportingPackId = pack.id
+                                        try {
+                                            exportWhatsAppLauncher.launch(intent)
+                                        } catch (e: Exception) {
+                                            Toast.makeText(context, "No se encontro aplicacion compatible de WhatsApp.", Toast.LENGTH_LONG).show()
+                                        }
+                                    } else {
+                                        Toast.makeText(context, issues.firstOrNull() ?: "El paquete no cumple con los requisitos para WhatsApp.", Toast.LENGTH_LONG).show()
+                                    }
+                                } else if (installed.size == 1) {
+                                    val targetPkg = installed.first().packageName
+                                    val (intent, issues) = viewModel.prepareAndGetExportIntent(context, targetPackage = targetPkg, packId = pack.id)
+                                    if (intent != null) {
+                                        exportingPackId = pack.id
+                                        try {
+                                            exportWhatsAppLauncher.launch(intent)
+                                        } catch (e: Exception) {
+                                            Toast.makeText(context, "Error al lanzar WhatsApp: ${e.message}", Toast.LENGTH_LONG).show()
+                                        }
+                                    } else {
+                                        Toast.makeText(context, issues.firstOrNull() ?: "El paquete no cumple con los requisitos para WhatsApp.", Toast.LENGTH_LONG).show()
+                                    }
+                                } else {
+                                    packForExportSelection = pack
+                                }
+                            }
                         )
                     }
                 }
             }
         }
+    }
+
+    packForExportSelection?.let { pack ->
+        val installed = remember(context) { WhatsAppExporter.getInstalledWhatsAppPackages(context) }
+        AlertDialog(
+            onDismissRequest = { packForExportSelection = null },
+            title = {
+                Text(
+                    text = "Exportar a WhatsApp",
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary,
+                    fontSize = 17.sp
+                )
+            },
+            text = {
+                Column {
+                    Text(
+                        text = "Selecciona en cual aplicacion de WhatsApp deseas anadir \"${pack.name}\":",
+                        color = TextSecondary,
+                        fontSize = 13.sp
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    installed.forEach { pkg ->
+                        Button(
+                            onClick = {
+                                val selectedPack = pack
+                                packForExportSelection = null
+                                val (intent, issues) = viewModel.prepareAndGetExportIntent(context, targetPackage = pkg.packageName, packId = selectedPack.id)
+                                if (intent != null) {
+                                    exportingPackId = selectedPack.id
+                                    try {
+                                        exportWhatsAppLauncher.launch(intent)
+                                    } catch (e: Exception) {
+                                        Toast.makeText(context, "Error al lanzar ${pkg.title}: ${e.message}", Toast.LENGTH_LONG).show()
+                                    }
+                                } else {
+                                    Toast.makeText(context, issues.firstOrNull() ?: "Error de validacion", Toast.LENGTH_LONG).show()
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Send,
+                                contentDescription = null,
+                                tint = SurfaceDark,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(text = "Anadir a ${pkg.title}", color = SurfaceDark, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { packForExportSelection = null }) {
+                    Text("Cancelar", color = TextSecondary)
+                }
+            },
+            containerColor = SurfaceDark
+        )
     }
 
     if (showCreateDialog) {
@@ -507,7 +632,8 @@ fun PackFilterChipsRow(
 fun PackCardItem(
     pack: StickerPack,
     onClick: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onExportToWhatsApp: () -> Unit
 ) {
     val context = LocalContext.current
 
@@ -643,6 +769,34 @@ fun PackCardItem(
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                     )
                 }
+
+                // Badge sutil: "En WhatsApp"
+                if (pack.isExportedToWhatsApp) {
+                    Surface(
+                        color = Color(0xDD075E54), // Verde sutil WhatsApp
+                        shape = RoundedCornerShape(topEnd = 0.dp, bottomStart = 8.dp),
+                        modifier = Modifier.align(Alignment.TopEnd)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(10.dp)
+                            )
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text(
+                                text = "En WhatsApp",
+                                color = Color.White,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
             }
 
             // Informacion del paquete
@@ -670,16 +824,33 @@ fun PackCardItem(
                         )
                     }
 
-                    IconButton(
-                        onClick = onDelete,
-                        modifier = Modifier.size(24.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = "Eliminar paquete",
-                            tint = TextSecondary.copy(alpha = 0.8f),
-                            modifier = Modifier.size(16.dp)
-                        )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        // Boton de exportar directo a WhatsApp
+                        IconButton(
+                            onClick = onExportToWhatsApp,
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Send,
+                                contentDescription = "Exportar a WhatsApp",
+                                tint = if (pack.canExport) EmeraldLight else TextSecondary.copy(alpha = 0.4f),
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(4.dp))
+
+                        IconButton(
+                            onClick = onDelete,
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "Eliminar paquete",
+                                tint = TextSecondary.copy(alpha = 0.8f),
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                     }
                 }
 
@@ -707,7 +878,7 @@ fun PackCardItem(
                             )
                             Spacer(modifier = Modifier.width(3.dp))
                             Text(
-                                text = "Listo",
+                                text = if (pack.isExportedToWhatsApp) "Instalado" else "Listo",
                                 fontSize = 11.sp,
                                 color = EmeraldLight,
                                 fontWeight = FontWeight.Bold

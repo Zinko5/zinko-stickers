@@ -13,6 +13,7 @@ data class StickerPack(
     val privacyPolicyWebsite: String = "",
     val licenseAgreementWebsite: String = "",
     val isAnimated: Boolean = false,
+    val isExportedToWhatsApp: Boolean = false,
     val trayImageFile: File? = null,
     val stickers: List<PackStickerItem> = emptyList()
 ) {

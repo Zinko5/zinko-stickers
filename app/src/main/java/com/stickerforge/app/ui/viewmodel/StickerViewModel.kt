@@ -592,39 +592,83 @@ class StickerViewModel(
     }
 
     /**
-     * Valida y prepara el paquete para exportacion formal a WhatsApp.
-     * Si no cumple los requisitos, retorna null y la lista de problemas.
+     * Valida y prepara un paquete para exportacion formal a WhatsApp.
+     * Si no se especifica packId, utiliza el activePack.
+     * Si le falta icono de bandeja o emojis, los genera/asigna automaticamente para permitir exportacion directa desde el menu.
      */
     fun prepareAndGetExportIntent(
         context: Context,
-        targetPackage: String? = null
+        targetPackage: String? = null,
+        packId: String? = null
     ): Pair<Intent?, List<String>> {
-        val activePack = _uiState.value.activePack
-        val issues = activePack.getValidationIssues()
+        val targetPackId = packId ?: _uiState.value.activePackId
+        var pack = _uiState.value.packs.firstOrNull { it.id == targetPackId } ?: _uiState.value.activePack
+
+        // Si le faltan emojis, asignamos el cuadrado blanco automaticamente para no bloquear exportacion
+        if (!pack.allStickersHaveEmojis && pack.stickers.isNotEmpty()) {
+            val defaultEmoji = "\u2B1C"
+            val filledStickers = pack.stickers.mapIndexed { idx, item ->
+                if (item.emojis.isEmpty()) {
+                    item.copy(
+                        name = item.name.ifBlank { "Sticker ${idx + 1}" },
+                        emojis = listOf(defaultEmoji),
+                        accessibilityText = item.accessibilityText.ifBlank { item.name.ifBlank { "Sticker ${idx + 1}" } }
+                    )
+                } else item
+            }
+            pack = pack.copy(stickers = filledStickers)
+        }
+
+        // Si no tiene tray icon y tiene stickers, generar Pepe Smolder adaptado
+        val currentTray = pack.trayImageFile
+        if (currentTray == null || !currentTray.exists()) {
+            val defaultTray = StickerProcessor.createDefaultPepeTrayIcon(context, pack.identifier)
+            if (defaultTray != null) {
+                pack = pack.copy(trayImageFile = defaultTray)
+            }
+        }
+
+        // Actualizar el estado con el paquete listo
+        val finalPack = pack
+        _uiState.update { state ->
+            val updatedPacks = state.packs.map { p ->
+                if (p.id == finalPack.id) finalPack else p
+            }
+            state.copy(packs = updatedPacks)
+        }
+        persistCurrentState()
+
+        val issues = finalPack.getValidationIssues()
         if (issues.isNotEmpty()) {
             return Pair(null, issues)
         }
 
         // Sincronizar paquete y archivos con almacenamiento interno de la app
-        StickerPackStorage.savePackForExport(context, activePack)
+        StickerPackStorage.savePackForExport(context, finalPack)
 
         val intent = WhatsAppExporter.createExportIntent(
             context = context,
-            pack = activePack,
+            pack = finalPack,
             targetPackage = targetPackage
         )
         return Pair(intent, emptyList())
     }
 
-    fun handleExportResult(result: ExportResult) {
+    fun handleExportResult(result: ExportResult, exportedPackId: String? = null) {
         when (result) {
             is ExportResult.Success -> {
-                _uiState.update {
-                    it.copy(
+                val packIdToMark = exportedPackId ?: _uiState.value.activePackId
+                _uiState.update { state ->
+                    val updatedPacks = state.packs.map { p ->
+                        if (p.id == packIdToMark) p.copy(isExportedToWhatsApp = true) else p
+                    }
+                    state.copy(
+                        packs = updatedPacks,
                         exportSuccessMessage = "Paquete anadido a WhatsApp con exito.",
                         exportErrorMessage = null
                     )
                 }
+                persistCurrentState()
             }
             is ExportResult.Cancelled -> {
                 if (!result.validationError.isNullOrBlank()) {
