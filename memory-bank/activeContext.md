@@ -27,9 +27,14 @@
   - Indicador visual sutil "En WhatsApp" con icono de verificacion en la esquina superior derecha de las tarjetas en `PackListScreen`, y cambio de estado a "Instalado" en el pie de la tarjeta.
   - Boton de accion rapida (icono de envio) en cada tarjeta para exportar directamente a WhatsApp sin necesidad de abrir la pantalla de edicion de cada paquete.
   - Auto-preparacion transparente: si el paquete no tenia tray icon o emojis asignados, se generan/asignan automaticamente antes de enviar el Intent oficial.
+- Preparacion de Release Publico:
+  - Creacion del archivo `LICENSE` bajo los terminos oficiales de la licencia MIT.
+  - Correccion de regla de respaldo en `data_extraction_rules.xml` (atributo `domain="file"`) para resolver validaciones estrictas de Android Lint en ensamblados de produccion.
+  - Configuracion de `signingConfig` en `release` para generar binarios APK instalables de produccion.
+  - Perfeccionamiento y actualizacion completa de `README.md` con guias de instalacion para usuarios, arquitectura, caracteristicas, disclaimer de WhatsApp y badge de licencia.
+  - Compilacion exitosa del binario APK de produccion en `app/build/outputs/apk/release/app-release.apk` (12 MB).
 - Pruebas Unitarias y Build:
   - 32 pruebas unitarias ejecutadas y superadas al 100%.
-  - Generacion exitosa del APK de depuracion en `app/build/outputs/apk/debug/app-debug.apk`.
 
 ## Decisiones y Consideraciones Activas
 - Aislamiento de respaldo vs exportacion a WhatsApp: La exportacion a WhatsApp sigue orientada a su ContentProvider e Intent oficial; el respaldo ZIP es un sistema de respaldo completo, portable y compatible entre instalaciones o usuarios.

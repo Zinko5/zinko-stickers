@@ -5,34 +5,57 @@
 [![Jetpack Compose](https://img.shields.io/badge/UI-Jetpack%20Compose%20M3-4285F4.svg)](https://developer.android.com/jetpack/compose)
 [![Min SDK](https://img.shields.io/badge/Min%20SDK-26%20(Android%208.0)-brightgreen.svg)](https://developer.android.com/about/dashboards)
 [![Target SDK](https://img.shields.io/badge/Target%20SDK-34%20(Android%2014)-blue.svg)](https://developer.android.com/about/versions/14)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Aplicacion nativa para Android disenada para crear, personalizar y exportar paquetes de stickers a WhatsApp cumpliendo rigurosamente con los estandares y especificaciones tecnicas oficiales de la plataforma.
+Aplicacion nativa para Android disenada para crear, personalizar, respaldar y exportar paquetes de stickers tanto estaticos como animados a WhatsApp, cumpliendo con los estandares y especificaciones tecnicas oficiales de la plataforma.
 
 ---
 
 ## Descripcion
 
-Zinko Stickers permite a los usuarios transformar facilmente fotografias e ilustraciones de su galeria en stickers optimizados para WhatsApp. La aplicacion procesa las imagenes de manera automatica y eficiente para garantizar compatibilidad total, transparencia y alta calidad, evitando fallos de exportacion o rechazos debidos a limitaciones tecnicas de formato o tamano.
+Zinko Stickers permite transformar fotografias, videos y GIFs de tu galeria en stickers optimizados para WhatsApp. La aplicacion procesa los archivos multimedia de forma eficiente garantizando compatibilidad total, fondos transparentes, resolucion estricta de 512x512 pixeles y control riguroso de peso, evitando errores de exportacion o rechazos por parte de WhatsApp.
+
+Ademas, incluye un sistema completo de respaldo e importacion/exportacion en archivos comprimidos `.zip`, lo que permite conservar o compartir colecciones enteras entre dispositivos sin depender de servidores externos ni perder configuraciones.
+
+---
+
+## Descarga e Instalacion
+
+Para instalar y probar la aplicacion directamente en tu dispositivo Android:
+
+1. Ve a la seccion **[Releases](../../releases)** del repositorio.
+2. Descarga el archivo `app-release.apk` adjunto en la ultima version disponible.
+3. Abre el archivo descargado en tu dispositivo Android.
+   - Si el sistema lo solicita, habilita el permiso de *Instalar aplicaciones de fuentes desconocidas* para tu navegador o explorador de archivos.
+   - Si Google Play Protect muestra un aviso preventivo (*"App desconocida"*), selecciona **Mas detalles** y luego **Instalar de todas formas**.
 
 ---
 
 ## Caracteristicas Principales
 
-- **Seleccion Flexible**: Soporte para formatos JPG, PNG y WebP con seleccion individual o multiple de hasta 30 imagenes a traves del Photo Picker moderno de Android.
-- **Procesamiento Preciso**: 
-  - Ajuste a lienzo estricto de 512x512 pixeles.
-  - Modo de escalado proporcional (FIT) que preserva bordes transparentes sin recortar partes esenciales de la imagen.
-  - Conversion a WebP con compresion adaptativa para mantener el peso estrictamente por debajo de los 100 KB por sticker.
+- **Stickers Estaticos y Animados**:
+  - Creacion de stickers estaticos a partir de JPG, PNG y WebP (<100 KB).
+  - Creacion de stickers animados a partir de videos (MP4, WebM) y GIFs animados, codificados en formato Animated WebP puro (<500 KB, loop infinito, duracion <= 6s).
+  - Reproduccion y visualizacion fluida de stickers animados en tiempo real en la interfaz de usuario.
+- **Procesamiento Preciso y Recorte**:
+  - Lienzo estricto de 512x512 pixeles.
+  - Modo de escalado proporcional (FIT) que preserva bordes transparentes.
+  - Herramienta de recorte con zoom, desplazamiento y rotacion.
 - **Gestion de Paquetes**:
-  - Organizacion en colecciones de 3 a 30 stickers (limites requeridos por WhatsApp).
-  - Validacion estricta para evitar la mezcla de elementos estaticos y animados en un mismo paquete.
-  - Generacion automatica de icono de bandeja (tray icon) de 96x96 pixeles (<50 KB).
-- **Asignacion de Metadatos**:
-  - Asociacion de hasta 3 emojis representativos por sticker para facilitar su busqueda en WhatsApp.
-  - Descripciones de texto para accesibilidad (hasta 125 caracteres).
-  - Estructuracion y serializacion automatica del archivo de manifiesto `contents.json`.
-- **Integracion Oficial con WhatsApp**:
-  - Exportacion directa mediante `StickerContentProvider` y los Intents oficiales de WhatsApp Stickers API.
+  - Organizacion de paquetes con nombres y autores personalizados.
+  - Control de limites de WhatsApp (3 a 30 stickers por paquete).
+  - Distincion clara entre paquetes estaticos y animados.
+  - Generacion automatica o personalizada del icono de bandeja (*tray icon*) de 96x96 pixeles (<50 KB).
+  - Indicador visual sutil de paquetes ya exportados a WhatsApp ("En WhatsApp" / "Instalado") en la pantalla principal.
+- **Exportacion Directa a WhatsApp**:
+  - Exportacion oficial mediante `StickerContentProvider` y los Intents de WhatsApp Stickers API.
+  - Deteccion automatica y selector para WhatsApp y WhatsApp Business.
+  - Boton de exportacion rapida en cada tarjeta de la pantalla principal sin necesidad de abrir el editor paquete por paquete.
+  - Simulador de chat interactivo con fondos claros, oscuros y verde de WhatsApp para previsualizar stickers antes de exportar.
+- **Sistema de Respaldo (.zip) Portatil**:
+  - Exportacion de todos o de paquetes seleccionados a un archivo `.zip` que contiene imagenes WebP, iconos de bandeja y un `manifest.json` detallado.
+  - Restauracion completa e importacion segura con proteccion activa contra ataques de *Zip Slip* y resolucion automatica de conflictos de identificadores.
+  - Especificacion tecnica documentada en [Sticker_Pack_Backup_Specification.md](Sticker_Pack_Backup_Specification.md).
 
 ---
 
@@ -40,77 +63,93 @@ Zinko Stickers permite a los usuarios transformar facilmente fotografias e ilust
 
 | Parametro | Requerimiento Oficial | Manejo en Zinko Stickers |
 |---|---|---|
-| Resolucion del sticker | 512 x 512 px | Redimensionado exacto con preservacion de aspect ratio y relleno transparente |
-| Tamano maximo por sticker | Menos de 100 KB | Compresion WebP optimizada |
-| Icono de bandeja (Tray icon) | 96 x 96 px (<50 KB) | Generacion automatica a partir del pack |
-| Formato de archivo | WebP con canal alfa | Codificacion directa WebP |
-| Tamano del paquete | 3 a 30 stickers | Validacion previa a exportacion |
-| Homogeneidad | Solo estaticos o solo animados | Validacion de tipo en tiempo de adicion |
+| Resolucion del sticker | 512 x 512 px | Redimensionado exacto con aspect ratio preservado y fondo transparente |
+| Peso maximo (Estatico) | Menor a 100 KB | Compresion adaptativa WebP |
+| Peso maximo (Animado) | Menor a 500 KB | Codificador WebP animado con compresion de fotogramas adaptativa |
+| Icono de bandeja (Tray icon) | 96 x 96 px (<50 KB) | Generacion PNG de 96x96 px con canal alfa |
+| Tamano del paquete | 3 a 30 stickers | Validacion estricta en interfaz y exportacion |
+| Homogeneidad | Solo estaticos o solo animados | Separacion forzada por tipo de paquete |
+| Formato de manifiesto | contents.json estricto | Generador de manifiesto validado para WhatsApp |
 
 ---
 
-## Arquitectura y Tecnologias
+## Arquitectura del Proyecto
 
 El proyecto sigue una arquitectura limpia basada en **MVVM (Model-View-ViewModel)** y flujo unidireccional de datos (UDF).
 
-```
+```text
 app/src/main/java/com/stickerforge/app/
-├── domain/             # Casos de uso y motor de procesamiento de imagenes
-│   └── StickerProcessor.kt
-├── model/              # Modelos de dominio y estado
+├── data/               # Repositorios y persistencia local JSON
+│   └── StickerPackRepository.kt
+├── domain/             # Casos de uso, procesamiento multimedia y respaldos
+│   ├── AnimatedWebpEncoder.kt
+│   ├── ContentsJsonGenerator.kt
+│   ├── StickerPackBackupManager.kt
+│   ├── StickerProcessor.kt
+│   └── WhatsAppExporter.kt
+├── model/              # Modelos de datos del dominio
 │   ├── CropParameters.kt
-│   ├── ImageMetadata.kt
 │   ├── PackStickerItem.kt
 │   ├── ProcessedSticker.kt
 │   └── StickerPack.kt
-├── ui/                 # Capa de presentacion (Jetpack Compose)
-│   ├── components/     # Componentes visuales reutilizables
-│   ├── screens/        # Pantallas (PackListScreen, PackDetailScreen, CropScreen, StickerPreview)
-│   ├── theme/          # Sistema de diseno (Material Design 3)
-│   └── viewmodel/      # Gestion de estado y logica reactiva
+├── provider/           # ContentProvider oficial de WhatsApp Stickers
+│   ├── StickerContentProvider.kt
+│   ├── StickerContentProviderConstants.kt
+│   └── StickerPackStorage.kt
+├── ui/                 # Capa de presentacion en Jetpack Compose
+│   ├── components/     # Componentes reutilizables (dialogos, rejillas, crop)
+│   ├── screens/        # Pantallas (PackListScreen, PackDetailScreen, CropScreen, PackPreviewScreen, etc.)
+│   ├── theme/          # Sistema de diseno y colores Material 3
+│   └── viewmodel/      # Gestion de estado reactivo y acciones de UI
 └── util/               # Utilidades de bajo nivel y helpers de bitmap
     └── ImageUtils.kt
 ```
 
-### Stack Tecnico
+### Tecnologias Utilizadas
 
 - **Lenguaje**: Kotlin 1.9+
 - **UI Toolkit**: Jetpack Compose con Material 3
-- **Concurrencia**: Kotlin Coroutines y StateFlow (`collectAsStateWithLifecycle`)
-- **Carga de Imagenes**: Coil Compose
-- **Testing**: JUnit 4, Mockito, Espresso, Compose UI Testing
+- **Concurrencia**: Coroutines y StateFlow (`collectAsStateWithLifecycle`)
+- **Carga y Decodificacion Multimedia**: Coil Compose con soporte para Animated WebP y GIF
+- **Testing**: JUnit 4, Mockito (32 pruebas unitarias automatizadas)
 
 ---
 
-## Requisitos Previos
+## Compilacion Local
+
+### Requisitos Previos
 
 - **JDK**: Version 17
 - **Android SDK**: Minimo API 26 (Android 8.0 Oreo), Target API 34 (Android 14)
-- **Gradle**: Wrapper incluido en el repositorio (Gradle 8.2+)
+- **Gradle**: Wrapper incluido en el proyecto (Gradle 8.2+)
+
+### Instrucciones
+
+1. Clonar el repositorio:
+   ```bash
+   git clone git@github.com:Zinko5/zinko-stickers.git
+   cd zinko-stickers
+   ```
+
+2. Ejecutar pruebas unitarias:
+   ```bash
+   ./gradlew testDebugUnitTest
+   ```
+
+3. Compilar APK Release:
+   ```bash
+   ./gradlew assembleRelease
+   ```
+   El APK generado se ubicara en: `app/build/outputs/apk/release/app-release.apk`.
 
 ---
 
-## Compilacion y Ejecucion
+## Descargo de Responsabilidad (Disclaimer)
 
-### Clonar el repositorio
-```bash
-git clone git@github.com:Zinko5/zinko-stickers.git
-cd zinko-stickers
-```
-
-### Ejecutar pruebas unitarias
-```bash
-./gradlew testDebugUnitTest
-```
-
-### Compilar APK en modo depuracion
-```bash
-./gradlew assembleDebug
-```
-El archivo APK generado se encontrara en: `app/build/outputs/apk/debug/app-debug.apk`.
+Este proyecto es un software independiente de codigo abierto y no esta afiliado, asociado, autorizado, respaldado ni conectado oficialmente de ninguna manera con WhatsApp LLC, Meta Platforms, Inc., ni con ninguna de sus subsidiarias o afiliados. El nombre "WhatsApp", asi como sus marcas, insignias e imagenes relacionadas, son marcas comerciales registradas de sus respectivos propietarios.
 
 ---
 
 ## Licencia
 
-Este proyecto esta bajo los terminos de la licencia definida por el autor.
+Este proyecto se distribuye bajo la licencia **MIT**. Para mas detalles, consulta el archivo [LICENSE](LICENSE).
