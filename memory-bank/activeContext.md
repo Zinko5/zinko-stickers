@@ -1,40 +1,32 @@
 # Active Context: Zinko Stickers
 
 ## Foco Actual
-- Soporte completo para stickers y paquetes animados de WhatsApp: generacion de archivos Animated WebP (512x512 px, <500 KB, loop=0, duracion <=6s), seleccion y extraccion de videos (MP4/WebM) y GIFs animados, visualizacion en tiempo real con `coil-gif` y exportacion validada a WhatsApp.
-- Proyecto completamente operativo y verificado con 27 pruebas unitarias.
+- Sistema integral de importacion y exportacion de respaldos (.zip) para paquetes de stickers.
+- Los usuarios pueden exportar todos sus paquetes o una seleccion personalizada a un archivo ZIP con manifest.json y assets intactos (WebP, tray PNG, emojis, nombres, accesibilidad, parametros de recorte y estado de animacion).
+- Restauracion e importacion completa desde archivos ZIP con proteccion contra Zip Slip, resolucion de colisiones de identificadores y persistencia en almacenamiento seguro.
+- Especificacion tecnica detallada documentada en `Sticker_Pack_Backup_Specification.md`.
+- Proyecto completamente operativo y verificado con 32 pruebas unitarias (100% exitosas).
 
 ## Cambios Recientes
-- Visualizacion en tiempo real de Stickers Animados en la UI:
-  - Incorporacion de `io.coil-kt:coil-gif:2.6.0` en `build.gradle.kts`.
-  - Creacion de `StickerForgeApp` (`Application`, `ImageLoaderFactory`) con `ImageDecoderDecoder.Factory` (API 28+) y `GifDecoder.Factory` (API <28).
-  - Configuracion explicita de `decoderFactory` en `PackDetailScreen`, `PackPreviewScreen`, `CropScreen` y `StickerMetadataDialog` para que los stickers animados se reproduzcan fluidamente en la cuadricula y vistas previas en vez de renderizarse vacios por limitacion de `BitmapFactory`.
-- Soporte y Generador de Stickers Animados (`AnimatedWebpEncoder`):
-  - Extraccion real de fotogramas de GIFs animados mediante `android.graphics.Movie`.
-  - Extraccion fluida de fotogramas de video con `MediaMetadataRetriever` usando `OPTION_CLOSEST`.
-  - Muxer puro en Kotlin para formato WebP Extendido (`RIFF...WEBP`) con chunks `VP8X`, `ANIM` y `ANMF` (sub-chunks `ALPH` y `VP8`/`VP8L`).
-  - Compresion adaptativa WebP para asegurar que cada sticker animado cumpla estrictamente con el limite maximo de 500 KB de WhatsApp.
-- Selector Multimedia Inteligente (`PackDetailScreen`):
-  - Actualizado para solicitar `PickVisualMedia.ImageAndVideo` cuando el paquete activo es animado (`isAnimated == true`).
-- Integracion en ViewModel y Flujo de Exportacion:
-  - Enrutamiento transparente en `StickerViewModel` pasando el flag `isAnim` durante la adicion y edicion de stickers.
-  - Exportacion coherente con `animated_sticker_pack: true` en `contents.json` y `1` en `StickerContentProvider`.
-- Identidad Visual y Logo Oficial:
-  - Generacion de conjunto completo de mipmaps (`mdpi`, `hdpi`, `xhdpi`, `xxhdpi`, `xxxhdpi`) para `ic_launcher.png`, `ic_launcher_round.png` y `ic_launcher_foreground.png` a partir de `logo-zinko-stickers-cuadrado-512x512.png`.
-  - Configuracion de adaptive icon oficial con fondo `#0373B5` y safe zone de 72dp centrada.
-  - Integracion del logo oficial en la barra superior de `PackListScreen`.
-- Pantalla de Vista Previa de WhatsApp (`PackPreviewScreen`):
-  - Simulacion interactiva de conversacion de WhatsApp con burbujas de chat, hora y doble check azul.
-  - Alternador de fondos de WhatsApp en vivo: WhatsApp Claro (`#EFEAE2`), WhatsApp Oscuro (`#0B141A`), Verde WhatsApp (`#075E54`) y Rejilla de Transparencia checkerboard.
-  - Modo alternativo de bandeja/teclado de stickers en cuadrícula 4x4.
-  - Inspector tecnico interactivo al tocar cualquier sticker: resolucion 512x512, tamano exacto en KB (<100 KB), emojis asociados, accesibilidad y accesos rapidos a recorte o metadatos.
-  - Enlaces de acceso directo a la vista previa desde `PackDetailScreen`, `PackMetadataReviewScreen` y navegacion de la app.
-- Optimizacion de Memoria y Manejo de Errores:
-  - `loadSampledBitmap`: submuestreo eficiente con `inSampleSize` y rescate activo ante `OutOfMemoryError` con reintento a doble submuestreo para fotos de camara de alta resolucion (>10-50 MP).
-  - `compressToWebpUnderLimit`: algoritmo adaptativo de calidad con garantia estricta de salida por debajo de 98 KB (<100 KB).
-- Pruebas Unitarias:
-  - 26 pruebas unitarias ejecutadas y superadas al 100%, incluyendo pruebas completas de persistencia en `StickerPackRepositoryTest`.
+- Administrador de Respaldos (`StickerPackBackupManager`):
+  - Creacion de `exportPacksToZip`: comprime los paquetes seleccionados junto a `manifest.json`, iconos de bandeja y WebPs correspondientes.
+  - Creacion de `importPacksFromZip`: descomprime y parsea `manifest.json`, valida rutas para prevenir vulnerabilidades de Path Traversal (Zip Slip), resuelve duplicados de identificadores y traslada assets al almacenamiento seguro de la aplicacion.
+  - Desacoplamiento de `fileUriProvider` para permitir pruebas unitarias limpias y reproducibles en entornos JVM y CI/CD.
+- Interfaz de Usuario y ViewModel (`PackListScreen` y `StickerViewModel`):
+  - Botones de "Exportar Respaldo (.zip)" e "Importar Respaldo (.zip)" en el menu contextual superior de la pantalla principal.
+  - Dialogo interactivo de exportacion (`ExportBackupDialog`) que permite alternar la seleccion individual de paquetes o seleccionar todos, mostrando previsualizaciones, conteo y tipos (estatico / animado).
+  - Integracion de `ActivityResultContracts.CreateDocument("application/zip")` y `ActivityResultContracts.OpenDocument()`.
+  - Notificaciones en `Snackbar` informando el exito o detalle de errores en importacion/exportacion.
+- Documentacion Tecnica:
+  - Creacion de `Sticker_Pack_Backup_Specification.md` con la especificacion completa del formato de empaquetado, estructura del archivo ZIP, esquema campo por campo de `manifest.json` y consideraciones de seguridad.
+- Selector y Relleno de Emojis:
+  - Modificado el autorrelleno en `StickerViewModel.autoAssignDefaultEmojisToUnlabeledStickers`: ahora asigna de manera uniforme el emoji de cuadrado blanco (⬜) en lugar de una seleccion aleatoria cuando los stickers no poseen emojis asignados.
+  - Actualizado `StickerMetadataDialog` anadiendo una categoria destacada "Populares" con todos los emojis solicitados por el usuario (😂, 😊, 😮, 😭, 😡, 🐸, 💃, 👌, 🗿, 😨, ❤️, 🔥, 😴, 🤔, 🤡, 😎, 🙏, 🤦, 💀, ⬜) para seleccion rapida y manual.
+- Pruebas Unitarias y Build:
+  - 32 pruebas unitarias ejecutadas y superadas al 100%.
+  - Generacion exitosa del APK de depuracion en `app/build/outputs/apk/debug/app-debug.apk`.
 
 ## Decisiones y Consideraciones Activas
-- Separacion de persistencia de metadatos y almacenamiento fisico de WebP: Los archivos de imagen se conservan en el directorio interno seguro `files/stickers` mientras que `packs_metadata.json` orquesta la relacion relacional y metadatos de los paquetes.
-- Compatibilidad de testing en JVM: Se desacoplo la resolucion de URIs en el repositorio mediante inyeccion de funciones puras, garantizando pruebas reproducibles tanto en entornos locales como de CI/CD.
+- Aislamiento de respaldo vs exportacion a WhatsApp: La exportacion a WhatsApp sigue orientada a su ContentProvider e Intent oficial; el respaldo ZIP es un sistema de respaldo completo, portable y compatible entre instalaciones o usuarios.
+- Seguridad en descompresion: Rechazo estricto de entradas maliciosas con secuencias `..` o rutas absolutas durante la extraccion de archivos comprimidos.
+- Resolucion de conflictos: Si un identificador ya existe localmente, se genera un sufijo aleatorio unico para evitar sobrescribir colecciones existentes del usuario.

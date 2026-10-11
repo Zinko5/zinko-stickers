@@ -1,5 +1,7 @@
 package com.stickerforge.app.ui.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -14,30 +16,43 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Animation
+import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -52,12 +67,15 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -100,13 +118,52 @@ fun PackListScreen(
     viewModel: StickerViewModel,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
+
     var isSearchActive by remember { mutableStateOf(false) }
     var showCreateDialog by remember { mutableStateOf(false) }
     var packToDelete by remember { mutableStateOf<StickerPack?>(null) }
+    var showOptionsMenu by remember { mutableStateOf(false) }
+    var showExportBackupDialog by remember { mutableStateOf(false) }
+    var selectedPackIdsForExport by remember { mutableStateOf<Set<String>>(emptySet()) }
+
+    // Launcher para exportar respaldo a archivo comprimido .zip
+    val createZipLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/zip")
+    ) { destinationUri ->
+        if (destinationUri != null) {
+            viewModel.exportBackup(context, selectedPackIdsForExport, destinationUri)
+        }
+    }
+
+    // Launcher para importar respaldo desde archivo comprimido .zip
+    val openZipLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { sourceUri ->
+        if (sourceUri != null) {
+            viewModel.importBackup(context, sourceUri)
+        }
+    }
+
+    LaunchedEffect(uiState.backupSuccessMessage) {
+        uiState.backupSuccessMessage?.let { msg ->
+            snackbarHostState.showSnackbar(msg)
+            viewModel.dismissBackupMessages()
+        }
+    }
+
+    LaunchedEffect(uiState.backupErrorMessage) {
+        uiState.backupErrorMessage?.let { msg ->
+            snackbarHostState.showSnackbar(msg)
+            viewModel.dismissBackupMessages()
+        }
+    }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             if (isSearchActive) {
                 TopAppBar(
@@ -193,6 +250,60 @@ fun PackListScreen(
                                 tint = TextPrimary
                             )
                         }
+
+                        Box {
+                            IconButton(onClick = { showOptionsMenu = true }) {
+                                Icon(
+                                    imageVector = Icons.Default.MoreVert,
+                                    contentDescription = "Opciones de respaldo",
+                                    tint = TextPrimary
+                                )
+                            }
+
+                            DropdownMenu(
+                                expanded = showOptionsMenu,
+                                onDismissRequest = { showOptionsMenu = false },
+                                modifier = Modifier.background(CardDark)
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Exportar Respaldo (.zip)", color = TextPrimary) },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Default.FileDownload,
+                                            contentDescription = null,
+                                            tint = EmeraldLight
+                                        )
+                                    },
+                                    onClick = {
+                                        showOptionsMenu = false
+                                        selectedPackIdsForExport = uiState.packs.map { it.id }.toSet()
+                                        showExportBackupDialog = true
+                                    }
+                                )
+
+                                DropdownMenuItem(
+                                    text = { Text("Importar Respaldo (.zip)", color = TextPrimary) },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Default.FileUpload,
+                                            contentDescription = null,
+                                            tint = AccentTeal
+                                        )
+                                    },
+                                    onClick = {
+                                        showOptionsMenu = false
+                                        openZipLauncher.launch(
+                                            arrayOf(
+                                                "application/zip",
+                                                "application/x-zip-compressed",
+                                                "application/octet-stream",
+                                                "*/*"
+                                            )
+                                        )
+                                    }
+                                )
+                            }
+                        }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = SurfaceDark)
                 )
@@ -224,6 +335,32 @@ fun PackListScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
+            if (uiState.isProcessing) {
+                Surface(
+                    color = CardDark,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(
+                            color = EmeraldPrimary,
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = "Procesando paquetes...",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextSecondary
+                        )
+                    }
+                }
+            }
+
             // Filtros de paquetes
             PackFilterChipsRow(
                 selectedFilter = uiState.selectedFilter,
@@ -278,6 +415,19 @@ fun PackListScreen(
             onConfirm = {
                 viewModel.deletePack(pack.id)
                 packToDelete = null
+            }
+        )
+    }
+
+    if (showExportBackupDialog) {
+        ExportBackupDialog(
+            packs = uiState.packs,
+            selectedPackIds = selectedPackIdsForExport,
+            onSelectionChange = { selectedPackIdsForExport = it },
+            onDismiss = { showExportBackupDialog = false },
+            onConfirmExport = {
+                showExportBackupDialog = false
+                createZipLauncher.launch("zinko_stickers_backup_${System.currentTimeMillis()}.zip")
             }
         )
     }
@@ -859,3 +1009,236 @@ fun DeletePackConfirmDialog(
         containerColor = SurfaceDark
     )
 }
+
+@Composable
+fun ExportBackupDialog(
+    packs: List<StickerPack>,
+    selectedPackIds: Set<String>,
+    onSelectionChange: (Set<String>) -> Unit,
+    onDismiss: () -> Unit,
+    onConfirmExport: () -> Unit
+) {
+    val allSelected = packs.isNotEmpty() && selectedPackIds.size == packs.size
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.FileDownload,
+                    contentDescription = null,
+                    tint = EmeraldLight,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Exportar Respaldo (.zip)",
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary,
+                    fontSize = 18.sp
+                )
+            }
+        },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "Selecciona los paquetes que deseas incluir en el archivo comprimido para respaldar o compartir:",
+                    color = TextSecondary,
+                    fontSize = 13.sp
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Fila Seleccionar Todos
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable {
+                            if (allSelected) {
+                                onSelectionChange(emptySet())
+                            } else {
+                                onSelectionChange(packs.map { it.id }.toSet())
+                            }
+                        }
+                        .background(CardDark)
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = allSelected,
+                        onCheckedChange = { isChecked ->
+                            if (isChecked) {
+                                onSelectionChange(packs.map { it.id }.toSet())
+                            } else {
+                                onSelectionChange(emptySet())
+                            }
+                        },
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = EmeraldPrimary,
+                            uncheckedColor = TextSecondary,
+                            checkmarkColor = SurfaceDark
+                        )
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Seleccionar todos (${packs.size})",
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextPrimary,
+                        fontSize = 13.sp
+                    )
+                    Spacer(modifier = Modifier.weight(1f))
+                    Text(
+                        text = "${selectedPackIds.size} elegidos",
+                        color = AccentTeal,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                if (packs.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "No hay paquetes creados para exportar.",
+                            color = TextSecondary,
+                            fontSize = 13.sp
+                        )
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 280.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items(packs, key = { it.id }) { pack ->
+                            val isChecked = pack.id in selectedPackIds
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        val newSet = if (isChecked) {
+                                            selectedPackIds - pack.id
+                                        } else {
+                                            selectedPackIds + pack.id
+                                        }
+                                        onSelectionChange(newSet)
+                                    }
+                                    .background(if (isChecked) EmeraldPrimary.copy(alpha = 0.08f) else CardDark)
+                                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Checkbox(
+                                    checked = isChecked,
+                                    onCheckedChange = { checked ->
+                                        val newSet = if (checked) {
+                                            selectedPackIds + pack.id
+                                        } else {
+                                            selectedPackIds - pack.id
+                                        }
+                                        onSelectionChange(newSet)
+                                    },
+                                    colors = CheckboxDefaults.colors(
+                                        checkedColor = EmeraldPrimary,
+                                        uncheckedColor = TextSecondary,
+                                        checkmarkColor = SurfaceDark
+                                    )
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+
+                                // Tray icon / Preview
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(SurfaceDark),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    val previewFile = pack.trayImageFile ?: pack.stickers.firstOrNull()?.processedSticker?.file
+                                    if (previewFile != null) {
+                                        AsyncImage(
+                                            model = ImageRequest.Builder(LocalContext.current)
+                                                .data(previewFile)
+                                                .crossfade(false)
+                                                .build(),
+                                            contentDescription = null,
+                                            modifier = Modifier.size(32.dp),
+                                            contentScale = ContentScale.Fit
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Default.Collections,
+                                            contentDescription = null,
+                                            tint = TextSecondary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.width(10.dp))
+
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = pack.name,
+                                        fontWeight = FontWeight.Bold,
+                                        color = TextPrimary,
+                                        fontSize = 13.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = if (pack.isAnimated) "Animado" else "Estatico",
+                                            color = if (pack.isAnimated) AnimatedPurple else AccentTeal,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                        Text(
+                                            text = " - ${pack.stickers.size} stickers",
+                                            color = TextSecondary,
+                                            fontSize = 11.sp
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirmExport,
+                enabled = selectedPackIds.isNotEmpty(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = EmeraldPrimary,
+                    disabledContainerColor = EmeraldPrimary.copy(alpha = 0.3f)
+                )
+            ) {
+                Text(
+                    text = "Exportar (${selectedPackIds.size})",
+                    color = SurfaceDark,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(
+                    text = "Cancelar",
+                    color = TextSecondary
+                )
+            }
+        },
+        containerColor = SurfaceDark
+    )
+}
+

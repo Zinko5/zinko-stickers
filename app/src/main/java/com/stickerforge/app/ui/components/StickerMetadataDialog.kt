@@ -82,10 +82,11 @@ fun StickerMetadataDialog(
     var hasUserEditedKeywordsManually by remember { mutableStateOf(stickerItem.accessibilityText.isNotBlank()) }
 
     val emojiCategories = listOf(
-        "Emociones" to listOf("😀", "😂", "🤣", "😍", "😎", "🥳", "🤔", "😱", "😭", "😡", "😴", "🥺", "👍", "👎", "👏", "💪"),
-        "Animales" to listOf("🐶", "🐱", "🐭", "🦊", "🐻", "🐼", "🦁", "🐯", "🐵", "🐸", "🦄", "🐔", "🐧", "🐺", "🐷", "🐝"),
-        "Objetos" to listOf("❤️", "🔥", "✨", "🎉", "💯", "⭐", "🚀", "🎁", "💡", "💥", "💣", "☕", "🍕", "🍺", "⚽", "🏆"),
-        "Expresiones" to listOf("👀", "🤷", "🤦", "🤐", "🤫", "🤪", "🤠", "👻", "💀", "👽", "🤖", "💩", "🎯", "⚡", "🌈", "☀️")
+        "Populares" to listOf("😂", "😊", "😮", "😭", "😡", "🐸", "💃", "👌", "🗿", "😨", "❤️", "🔥", "😴", "🤔", "🤡", "😎", "🙏", "🤦", "💀", "⬜"),
+        "Emociones" to listOf("😂", "😊", "😮", "😭", "😡", "😨", "😴", "🤔", "🤡", "😎", "😀", "🤣", "😍", "🥳", "😱", "🥺"),
+        "Gestos y Personas" to listOf("💃", "👌", "🙏", "🤦", "👍", "👎", "👏", "💪", "🤷", "👀", "🤠", "🤪", "🤐", "🤫"),
+        "Objetos y Simbolos" to listOf("🗿", "❤️", "🔥", "💀", "⬜", "✨", "🎉", "💯", "⭐", "🚀", "🎁", "💡", "💥", "💣", "☕", "⚽"),
+        "Animales" to listOf("🐸", "🐶", "🐱", "🐭", "🦊", "🐻", "🐼", "🦁", "🐯", "🐵", "🦄", "🐔", "🐧", "🐺", "🐷", "🐝")
     )
     var selectedCategoryIndex by remember { mutableIntStateOf(0) }
 

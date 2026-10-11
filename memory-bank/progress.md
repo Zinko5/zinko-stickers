@@ -1,9 +1,9 @@
 # Progress: Zinko Stickers
 
 ## Estado General del Proyecto
-- **Fase actual**: Fase 5 completada (Pulido final, persistencia automatica de paquetes y stickers, nuevo logo oficial e iconos adaptive, vista previa de WhatsApp y pruebas unitarias al 100%).
-- **Estado de entrega**: Todas las fases del PRD (Fase 0 a Fase 5) completadas y verificadas con éxito.
-- **Estado de documentacion**: Memory Bank completamente actualizado y alineado.
+- **Fase actual**: Sistema de Respaldo, Importacion y Exportacion de Paquetes (.zip) completado y probado.
+- **Estado de entrega**: Todas las fases del PRD (Fase 0 a Fase 5) mas soporte de Stickers Animados y Sistema de Respaldo ZIP completados con exito.
+- **Estado de documentacion**: Memory Bank y `Sticker_Pack_Backup_Specification.md` completamente actualizados y alineados.
 
 ## Estado de Fases y Funcionalidades
 
@@ -17,6 +17,7 @@
 | Fase 4 | Exportacion a WhatsApp | Completado | `StickerContentProvider` seguro, Intent oficial `ENABLE_STICKER_PACK`, deteccion de WhatsApp y W4B |
 | Fase 5 | Pulido y validaciones | Completado | Persistencia local completa, logo Zinko en mipmaps y UI, PackPreviewScreen con simulacion de chat, proteccion OOM para >10 MB y 27 tests |
 | Extra | Stickers Animados | Completado | Codificador WebP Animado (RIFF/VP8X/ANIM/ANMF <500 KB), decodificador ImageDecoder en Coil para reproduccion en vivo en UI, extraccion GIF con Movie y exportacion a WhatsApp |
+| Extra | Respaldo e Import/Export | Completado | Empaquetado ZIP con `manifest.json`, seleccion individual o masiva de paquetes, restauracion de datos y proteccion Zip Slip |
 
 ## Criterios de Aceptacion (Progreso)
 - [x] Al exportar, WhatsApp recibe e instala el paquete de stickers a traves del Intent oficial y ContentProvider (Fase 4).
@@ -27,12 +28,17 @@
 - [x] El paquete contiene entre 3 y 30 stickers (verificado y validado en UI).
 - [x] Los stickers tienen fondo transparente.
 - [x] Los stickers son configurables con palabras clave (<=125 chars) y 1 a 3 emojis asociados.
-- [x] Se genera el tray icon exacto de 96x96 px PNG <50 KB con canal alfa (Pepe Smolder adaptado).
+- [x] Se genera el tray icon exacto de 96x96 px PNG <50 KB con canal alfa.
 - [x] Se genera `contents.json` estricto conforme a la especificacion de WhatsApp.
 - [x] La app no crashea al seleccionar imagenes de mas de 10 MB (submuestreo inteligente y captura preventiva de OOM).
 - [x] Los paquetes y stickers persisten al cerrar y reabrir la aplicacion.
 - [x] El icono y logo de la aplicacion utilizan el diseno cuadrado oficial de Zinko Stickers en todas las densidades.
 - [x] Vista previa funcional con simulacion de chat y alternador de fondos de WhatsApp.
+- [x] Exportacion a archivo comprimido (.zip) con seleccion de todos o ciertos paquetes y conservacion integral de assets y metadatos.
+- [x] Importacion desde archivo comprimido (.zip) con recuperacion integra de nombres, stickers, tray icons, emojis, accesibilidad y recorte.
+- [x] Proteccion contra ataques de Zip Slip durante la extraccion de respaldos comprimidos.
+- [x] Resolucion automatica de colisiones de identificadores al restaurar respaldos.
+- [x] Documentacion tecnica exhaustiva en `Sticker_Pack_Backup_Specification.md`.
 
 ## Problemas Conocidos / Bloqueos
-- Ninguno. 27 pruebas unitarias superadas al 100% y APK de depuracion generado limpiamente en `app/build/outputs/apk/debug/app-debug.apk`.
+- Ninguno. 32 pruebas unitarias superadas al 100% y APK de depuracion generado limpiamente en `app/build/outputs/apk/debug/app-debug.apk`.

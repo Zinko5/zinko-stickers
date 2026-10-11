@@ -9,6 +9,9 @@ import androidx.lifecycle.viewModelScope
 import com.stickerforge.app.data.StickerPackRepository
 import com.stickerforge.app.domain.ContentsJsonGenerator
 import com.stickerforge.app.domain.ExportResult
+import com.stickerforge.app.domain.BackupExportResult
+import com.stickerforge.app.domain.BackupImportResult
+import com.stickerforge.app.domain.StickerPackBackupManager
 import com.stickerforge.app.domain.StickerProcessor
 import com.stickerforge.app.domain.WhatsAppExporter
 import com.stickerforge.app.model.CropParameters
@@ -57,7 +60,9 @@ data class StickerUiState(
     val errorMessage: String? = null,
     val warningMessage: String? = null,
     val exportSuccessMessage: String? = null,
-    val exportErrorMessage: String? = null
+    val exportErrorMessage: String? = null,
+    val backupSuccessMessage: String? = null,
+    val backupErrorMessage: String? = null
 ) {
     val activePack: StickerPack
         get() = packs.firstOrNull { it.id == activePackId } ?: packs.firstOrNull() ?: StickerPack()
@@ -546,13 +551,12 @@ class StickerViewModel(
     fun autoAssignDefaultEmojisToUnlabeledStickers() {
         _uiState.update { state ->
             val activePack = state.activePack
-            val defaultEmojiPool = listOf("😀", "🔥", "✨", "🎉", "❤️", "👍", "🥳", "😎")
+            val defaultEmoji = "\u2B1C" // ⬜ (cuadrado blanco)
             val updatedStickers = activePack.stickers.mapIndexed { index, item ->
                 if (item.emojis.isEmpty()) {
-                    val assignedEmoji = defaultEmojiPool[index % defaultEmojiPool.size]
                     item.copy(
                         name = item.name.ifBlank { "Sticker ${index + 1}" },
-                        emojis = listOf(assignedEmoji),
+                        emojis = listOf(defaultEmoji),
                         accessibilityText = item.accessibilityText.ifBlank { item.name.ifBlank { "Sticker ${index + 1}" } }
                     )
                 } else item
@@ -645,6 +649,105 @@ class StickerViewModel(
 
     fun dismissExportMessages() {
         _uiState.update { it.copy(exportSuccessMessage = null, exportErrorMessage = null) }
+    }
+
+    fun exportBackup(
+        context: Context,
+        selectedPackIds: Set<String>,
+        outputUri: Uri
+    ) {
+        val currentPacks = _uiState.value.packs
+        val packsToExport = if (selectedPackIds.isEmpty()) {
+            currentPacks
+        } else {
+            currentPacks.filter { selectedPackIds.contains(it.id) }
+        }
+
+        if (packsToExport.isEmpty()) {
+            _uiState.update { it.copy(backupErrorMessage = "No hay paquetes seleccionados para exportar.") }
+            return
+        }
+
+        _uiState.update { it.copy(isProcessing = true, backupErrorMessage = null, backupSuccessMessage = null) }
+
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                try {
+                    context.contentResolver.openOutputStream(outputUri)?.use { out ->
+                        StickerPackBackupManager.exportPacksToZip(packsToExport, out)
+                    } ?: BackupExportResult.Error("No se pudo abrir el archivo de destino para escritura.")
+                } catch (e: Exception) {
+                    BackupExportResult.Error("Error al escribir el archivo de respaldo: ${e.message}")
+                }
+            }
+
+            _uiState.update { state ->
+                when (result) {
+                    is BackupExportResult.Success -> {
+                        state.copy(
+                            isProcessing = false,
+                            backupSuccessMessage = "Respaldo exportado exitosamente: ${result.packsCount} paquete(s) y ${result.stickersCount} sticker(s).",
+                            backupErrorMessage = null
+                        )
+                    }
+                    is BackupExportResult.Error -> {
+                        state.copy(
+                            isProcessing = false,
+                            backupErrorMessage = result.message,
+                            backupSuccessMessage = null
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    fun importBackup(
+        context: Context,
+        inputUri: Uri
+    ) {
+        _uiState.update { it.copy(isProcessing = true, backupErrorMessage = null, backupSuccessMessage = null) }
+
+        viewModelScope.launch {
+            val existingIds = _uiState.value.packs.map { it.identifier }.toSet()
+            val result = withContext(Dispatchers.IO) {
+                try {
+                    context.contentResolver.openInputStream(inputUri)?.use { inStream ->
+                        StickerPackBackupManager.importPacksFromZip(context, inStream, existingIds)
+                    } ?: BackupImportResult.Error("No se pudo abrir el archivo seleccionado.")
+                } catch (e: Exception) {
+                    BackupImportResult.Error("Error al leer el archivo de respaldo: ${e.message}")
+                }
+            }
+
+            _uiState.update { state ->
+                when (result) {
+                    is BackupImportResult.Success -> {
+                        val updatedPacks = state.packs + result.importedPacks
+                        val newActiveId = result.importedPacks.firstOrNull()?.id ?: state.activePackId
+                        state.copy(
+                            isProcessing = false,
+                            packs = updatedPacks,
+                            activePackId = newActiveId,
+                            backupSuccessMessage = "Respaldo importado exitosamente: ${result.packsCount} paquete(s) y ${result.stickersCount} sticker(s).",
+                            backupErrorMessage = null
+                        )
+                    }
+                    is BackupImportResult.Error -> {
+                        state.copy(
+                            isProcessing = false,
+                            backupErrorMessage = result.message,
+                            backupSuccessMessage = null
+                        )
+                    }
+                }
+            }
+            persistCurrentState()
+        }
+    }
+
+    fun dismissBackupMessages() {
+        _uiState.update { it.copy(backupSuccessMessage = null, backupErrorMessage = null) }
     }
 
     fun dismissError() {
