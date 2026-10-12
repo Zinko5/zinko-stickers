@@ -122,11 +122,36 @@ object AnimatedWebpEncoder {
         val frames = mutableListOf<Bitmap>()
         val mimeType = context.contentResolver.getType(uri)?.lowercase() ?: ""
 
-        // 1. Si es un archivo GIF animado, extraer los fotogramas con android.graphics.Movie
-        if (mimeType == "image/gif" || uri.toString().endsWith(".gif", ignoreCase = true)) {
+        val localFile = if (uri.scheme == "file" && uri.path != null) {
+            java.io.File(uri.path!!)
+        } else null
+
+        // Detectar si el contenido es un GIF (por mime, extension o cabecera de bytes)
+        var isGif = mimeType == "image/gif" ||
+                uri.toString().contains(".gif", ignoreCase = true) ||
+                (uri.path?.contains(".gif", ignoreCase = true) == true)
+
+        if (localFile != null && localFile.exists() && localFile.length() >= 3) {
             try {
-                context.contentResolver.openInputStream(uri)?.use { stream ->
-                    val movie = android.graphics.Movie.decodeStream(stream)
+                java.io.FileInputStream(localFile).use { fis ->
+                    val header = ByteArray(3)
+                    if (fis.read(header) == 3 && header[0] == 'G'.code.toByte() && header[1] == 'I'.code.toByte() && header[2] == 'F'.code.toByte()) {
+                        isGif = true
+                    }
+                }
+            } catch (ignored: Exception) {}
+        }
+
+        // 1. Si es un archivo GIF animado, extraer los fotogramas con android.graphics.Movie
+        if (isGif) {
+            try {
+                val stream = if (localFile != null && localFile.exists()) {
+                    java.io.FileInputStream(localFile)
+                } else {
+                    context.contentResolver.openInputStream(uri)
+                }
+                stream?.use { inStream ->
+                    val movie = android.graphics.Movie.decodeStream(inStream)
                     if (movie != null && movie.duration() > 0) {
                         val totalDurationMs = movie.duration().toLong()
                         val effectiveDurationMs = minOf(totalDurationMs, MAX_WHATSAPP_DURATION_MS)
@@ -153,7 +178,9 @@ object AnimatedWebpEncoder {
                             movie.draw(canvas, 0f, 0f)
                             frames.add(bitmap)
                         }
-                        return AnimationFrames(frames, frameDurationMs)
+                        if (frames.isNotEmpty()) {
+                            return AnimationFrames(frames, frameDurationMs)
+                        }
                     }
                 }
             } catch (e: Exception) {
@@ -161,54 +188,81 @@ object AnimatedWebpEncoder {
             }
         }
 
-        // 2. Si es video (o cualquier otro medio reproducible), extraer con MediaMetadataRetriever
+        // 2. Si es video (o Movie no pudo procesar el GIF/MP4), extraer con MediaMetadataRetriever
         if (frames.isEmpty()) {
-            val retriever = MediaMetadataRetriever()
-            try {
-                retriever.setDataSource(context, uri)
-                val durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
-                val totalDurationMs = durationStr?.toLongOrNull() ?: 3000L
-                val effectiveDurationMs = minOf(totalDurationMs, MAX_WHATSAPP_DURATION_MS)
-
-                val targetFps = when {
-                    effectiveDurationMs <= 2500L -> 14.0
-                    effectiveDurationMs <= 4500L -> 12.0
-                    effectiveDurationMs <= 7200L -> 10.0
-                    else -> 8.0
-                }
-                val idealFrameCount = ((effectiveDurationMs * targetFps) / 1000.0).toInt()
-                val frameCount = idealFrameCount.coerceIn(16, 70)
-                val frameDurationMs = (effectiveDurationMs / frameCount).toInt().coerceAtLeast(30)
-
-                val stepUs = (effectiveDurationMs * 1000L) / frameCount
-
-                for (i in 0 until frameCount) {
-                    val timeUs = i * stepUs
-                    val frame = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-                        retriever.getScaledFrameAtTime(
-                            timeUs,
-                            MediaMetadataRetriever.OPTION_CLOSEST,
-                            TARGET_SIZE_PX,
-                            TARGET_SIZE_PX
-                        ) ?: retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST)
-                    } else {
-                        retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST)
-                    }
-
-                    if (frame != null) {
-                        frames.add(frame)
-                    }
-                }
-                if (frames.isNotEmpty()) {
-                    return AnimationFrames(frames, frameDurationMs)
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            } finally {
+            val retrieverPair = createInitializedRetriever(context, uri, localFile)
+            if (retrieverPair != null) {
+                val retriever = retrieverPair.first
+                val closeable = retrieverPair.second
                 try {
-                    retriever.release()
+                    val durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                    val parsedDuration = durationStr?.toLongOrNull() ?: 0L
+                    val totalDurationMs = if (parsedDuration > 0L) parsedDuration else 3000L
+                    val effectiveDurationMs = minOf(totalDurationMs, MAX_WHATSAPP_DURATION_MS).coerceAtLeast(500L)
+
+                    val targetFps = when {
+                        effectiveDurationMs <= 2500L -> 14.0
+                        effectiveDurationMs <= 4500L -> 12.0
+                        effectiveDurationMs <= 7200L -> 10.0
+                        else -> 8.0
+                    }
+                    val idealFrameCount = ((effectiveDurationMs * targetFps) / 1000.0).toInt()
+                    val frameCount = idealFrameCount.coerceIn(16, 70)
+                    val frameDurationMs = (effectiveDurationMs / frameCount).toInt().coerceAtLeast(30)
+
+                    val stepUs = (effectiveDurationMs * 1000L) / frameCount
+
+                    for (i in 0 until frameCount) {
+                        val timeUs = i * stepUs
+                        val frame = try {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                                retriever.getScaledFrameAtTime(
+                                    timeUs,
+                                    MediaMetadataRetriever.OPTION_CLOSEST,
+                                    TARGET_SIZE_PX,
+                                    TARGET_SIZE_PX
+                                )
+                            } else null
+                        } catch (e: Exception) {
+                            null
+                        } ?: try {
+                            retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST)
+                        } catch (e: Exception) {
+                            null
+                        } ?: try {
+                            retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                        } catch (e: Exception) {
+                            null
+                        } ?: try {
+                            retriever.getFrameAtTime(timeUs)
+                        } catch (e: Exception) {
+                            null
+                        }
+
+                        if (frame != null) {
+                            frames.add(frame)
+                        }
+                    }
+
+                    if (frames.size == 1) {
+                        val copy = frames[0].copy(Bitmap.Config.ARGB_8888, true)
+                        if (copy != null) {
+                            frames.add(copy)
+                        }
+                    }
+
+                    if (frames.isNotEmpty()) {
+                        return AnimationFrames(frames, frameDurationMs)
+                    }
                 } catch (e: Exception) {
-                    // Ignore
+                    e.printStackTrace()
+                } finally {
+                    try {
+                        closeable?.close()
+                    } catch (ignored: Exception) {}
+                    try {
+                        retriever.release()
+                    } catch (ignored: Exception) {}
                 }
             }
         }
@@ -381,5 +435,56 @@ object AnimatedWebpEncoder {
         stream.write((value shr 8) and 0xFF)
         stream.write((value shr 16) and 0xFF)
         stream.write((value shr 24) and 0xFF)
+    }
+
+    private fun createInitializedRetriever(
+        context: Context,
+        uri: Uri,
+        localFile: File?
+    ): Pair<MediaMetadataRetriever, java.io.Closeable?>? {
+        // Estrategia 1: Archivo local con descriptor de FileInputStream (fd limpio sin offset ni longitud)
+        if (localFile != null && localFile.exists()) {
+            try {
+                val fis = java.io.FileInputStream(localFile)
+                val retriever = MediaMetadataRetriever()
+                retriever.setDataSource(fis.fd)
+                return Pair(retriever, fis)
+            } catch (ignored: Exception) {}
+
+            // Estrategia 2: Ruta absoluta directa del archivo local
+            try {
+                val retriever = MediaMetadataRetriever()
+                retriever.setDataSource(localFile.absolutePath)
+                return Pair(retriever, null)
+            } catch (ignored: Exception) {}
+        }
+
+        // Estrategia 3: Context y URI directo (maneja internamente content:// y file://)
+        try {
+            val retriever = MediaMetadataRetriever()
+            retriever.setDataSource(context, uri)
+            return Pair(retriever, null)
+        } catch (ignored: Exception) {}
+
+        // Estrategia 4: ParcelFileDescriptor via ContentResolver
+        try {
+            val pfd = context.contentResolver.openFileDescriptor(uri, "r")
+            if (pfd != null) {
+                val retriever = MediaMetadataRetriever()
+                retriever.setDataSource(pfd.fileDescriptor)
+                return Pair(retriever, pfd)
+            }
+        } catch (ignored: Exception) {}
+
+        // Estrategia 5: Path del URI si existe
+        if (uri.path != null) {
+            try {
+                val retriever = MediaMetadataRetriever()
+                retriever.setDataSource(uri.path)
+                return Pair(retriever, null)
+            } catch (ignored: Exception) {}
+        }
+
+        return null
     }
 }

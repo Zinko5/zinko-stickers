@@ -1,11 +1,29 @@
 # Active Context: Zinko Stickers
 
 ## Foco Actual
-- Optimizacion ergonomica de la pantalla de Vista Previa de WhatsApp (`PackPreviewScreen`) y eliminacion del desperdicio de espacio vertical en la cabecera.
-- Motor de muestreo adaptativo de video a WebP animado (`AnimatedWebpEncoder`): preservacion de duracion completa (hasta 9.6s conforme al limite estricto <10s de WhatsApp), distribucion temporal continua y compresion adaptativa bajo 500 KB.
-- Pruebas unitarias incrementadas a 33 (100% exitosas).
+- Filtro de paquetes no exportados ("Sin exportar") en la pantalla principal (`PackListScreen`).
+- Extraccion e importacion directa de videos/GIFs desde URLs de Twitter / X a stickers animados (`TwitterMediaResolver`).
+- Asignacion automatica del emoji `✖️` a stickers importados desde Twitter y buscador interactivo de emojis en `StickerMetadataDialog`.
+- Soporte robusto y exhaustivo para GIFs y videos de Twitter / X: rechazo estricto de playlists HLS `.m3u8`, seleccion del MP4 de mayor bitrate, e inicializacion desacoplada de `MediaMetadataRetriever` con `FileInputStream.fd` y `context, uri`.
+- Pruebas unitarias incrementadas a 40 (100% exitosas).
 
 ## Cambios Recientes
+- Filtro de Paquetes No Exportados ("Sin exportar"):
+  - Incorporado el valor `NOT_EXPORTED` en `PackFilter` y en `StickerUiState.filteredPacks` (`!it.isExportedToWhatsApp`).
+  - Anadido chip "Sin exportar (N)" en `PackFilterChipsRow` con color de aviso ámbar (`WarningAmber`).
+  - Habilitado scroll horizontal ergonómico (`horizontalScroll(rememberScrollState())`) en la fila de filtros para acomodar cómodamente todas las opciones en pantallas de cualquier tamaño.
+- Importación Directa de Video/GIF desde Twitter / X (`TwitterMediaResolver`):
+  - Creación de `TwitterMediaResolver` en `com.stickerforge.app.domain`:
+    - Detección de enlaces de tweets (`x.com`, `twitter.com`, `fxtwitter.com`, etc.) y enlaces directos de video.
+    - Resolución escalonada: consulta JSON a FxTwitter, respaldo mediante API de sindicación pública de Twitter con cálculo algorítmico de token, y resolución de redirección por subdominio directo.
+    - Descarga segura mediante streaming con verificación estricta de tamaño máximo (50 MB), timeouts y limpieza de archivos temporales.
+  - Método `addTwitterMediaToActivePack` en `StickerViewModel`: descarga y convierte en segundo plano a WebP animado de WhatsApp.
+  - Asignación automática del emoji `✖️` como emoji principal y texto de accesibilidad ("twitter x @usuario").
+- Descubrimiento de Emojis y Buscador en `StickerMetadataDialog`:
+  - Incorporación del emoji `✖️` en las categorías "Populares" y "Objetos y Símbolos".
+  - Nuevo campo de búsqueda de emojis en tiempo real con catálogo de etiquetas ("x", "twitter", "cruz", "fuego", "gato", etc.).
+- Permisos:
+  - Añadido permiso `android.permission.INTERNET` en `AndroidManifest.xml` para permitir descargas de medios.
 - Rediseño Compacto de Vista Previa (`PackPreviewScreen`):
   - Reemplazo de la cabecera sobredimensionada con chips de texto de varias lineas por `CompactPreviewControlsBar`: conmutador [Chat | Teclado] a la izquierda y swatches circulares de color de temas (Claro, Oscuro, Verde, Malla/Transparente) a la derecha, en una sola fila de ~42dp.
   - Correccion de espaciado y ventana de insets en `Scaffold` (`contentWindowInsets = WindowInsets(0, 0, 0, 0)`) y `TopAppBar` para erradicar el vacio superior.

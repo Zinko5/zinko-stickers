@@ -19,6 +19,7 @@
 | Extra | Stickers Animados | Completado | Codificador WebP Animado (RIFF/VP8X/ANIM/ANMF <500 KB), decodificador ImageDecoder en Coil para reproduccion en vivo en UI, extraccion GIF con Movie y exportacion a WhatsApp |
 | Extra | Respaldo e Import/Export | Completado | Empaquetado ZIP con `manifest.json`, seleccion individual o masiva de paquetes, restauracion de datos y proteccion Zip Slip |
 | Extra | Pulido Vista Previa y Muestreo de Video | Completado | Cabecera ultra-compacta (~42dp) con swatches de color, ficha tecnica desplegable con limite dinámico (<500 KB para animados), muestreo adaptativo de video hasta 9.6s sin cortes prematuros |
+| Extra | Filtro No Exportados y Twitter / X | Completado | Filtro "Sin exportar" en pantalla principal, importacion de video/GIF de Twitter/X a sticker animado WebP con emoji ✖️ asignado y buscador de emojis |
 
 ## Criterios de Aceptacion (Progreso)
 - [x] Al exportar, WhatsApp recibe e instala el paquete de stickers a traves del Intent oficial y ContentProvider (Fase 4).
@@ -45,6 +46,9 @@
 - [x] Cabecera compacta con swatches circulares de temas y seleccion de modo en `PackPreviewScreen` sin desbordamiento de espacio.
 - [x] Limite de peso dinamico y coherente (<500 KB en animados, <100 KB en estaticos) en la ficha tecnica del sticker.
 - [x] Conversion de video a sticker animado que cubre toda la duracion (hasta 9.6s, maximo de WhatsApp) sin recortar los primeros segundos.
+- [x] Filtro de paquetes "Sin exportar" en la pantalla principal con conteo dinamico y desplazamiento horizontal suave.
+- [x] Importacion directa de medios desde Twitter / X (enlaces de tweets y enlaces directos) a stickers animados con conversion automatica a WebP.
+- [x] Asignacion por defecto del emoji ✖️ a stickers importados desde Twitter / X y busqueda rapida de emojis en el dialogo de metadatos.
 
 ## Problemas Conocidos / Bloqueos
-- Ninguno. 33 pruebas unitarias superadas al 100% y APK generado limpiamente.
+- Ninguno. 40 pruebas unitarias superadas al 100% y APK de desarrollo compilado limpiamente.

@@ -13,6 +13,7 @@ import com.stickerforge.app.domain.BackupExportResult
 import com.stickerforge.app.domain.BackupImportResult
 import com.stickerforge.app.domain.StickerPackBackupManager
 import com.stickerforge.app.domain.StickerProcessor
+import com.stickerforge.app.domain.TwitterMediaResolver
 import com.stickerforge.app.domain.WhatsAppExporter
 import com.stickerforge.app.model.CropParameters
 import com.stickerforge.app.model.PackStickerItem
@@ -40,7 +41,8 @@ enum class CurrentScreen {
 enum class PackFilter {
     ALL,
     STATIC,
-    ANIMATED
+    ANIMATED,
+    NOT_EXPORTED
 }
 
 data class StickerUiState(
@@ -78,6 +80,7 @@ data class StickerUiState(
                 PackFilter.ALL -> list
                 PackFilter.STATIC -> list.filter { !it.isAnimated }
                 PackFilter.ANIMATED -> list.filter { it.isAnimated }
+                PackFilter.NOT_EXPORTED -> list.filter { !it.isExportedToWhatsApp }
             }
             return list
         }
@@ -361,6 +364,116 @@ class StickerViewModel(
                 )
             }
             persistCurrentState()
+        }
+    }
+
+    /**
+     * Descarga y anade un video o GIF desde Twitter / X directamente al paquete animado activo.
+     * Asocia por defecto el emoji "✖️" y las palabras clave de busqueda correspondientes.
+     */
+    fun addTwitterMediaToActivePack(
+        context: Context,
+        url: String,
+        onSuccess: () -> Unit = {},
+        onError: (String) -> Unit = {}
+    ) {
+        val currentPack = _uiState.value.activePack
+        val availableSlots = (30 - currentPack.count).coerceAtLeast(0)
+        if (availableSlots <= 0) {
+            val msg = "El paquete ya alcanzo el maximo de 30 stickers permitido por WhatsApp."
+            _uiState.update { it.copy(errorMessage = msg) }
+            onError(msg)
+            return
+        }
+
+        _uiState.update {
+            it.copy(
+                isProcessing = true,
+                processingProgress = "Descargando medio de Twitter / X..."
+            )
+        }
+
+        viewModelScope.launch {
+            try {
+                val mediaResult = withContext(Dispatchers.IO) {
+                    TwitterMediaResolver.resolveAndDownload(context, url)
+                }
+
+                _uiState.update {
+                    it.copy(processingProgress = "Convirtiendo a sticker animado WebP...")
+                }
+
+                val processed = withContext(Dispatchers.IO) {
+                    val p = StickerProcessor.processImage(
+                        context = context,
+                        sourceUri = Uri.fromFile(mediaResult.file),
+                        cropParameters = CropParameters(),
+                        isAnimated = true
+                    )
+                    try { mediaResult.file.delete() } catch (ignored: Exception) {}
+                    p
+                }
+
+                if (processed != null) {
+                    val defaultName = if (!mediaResult.username.isNullOrBlank()) {
+                        "X @${mediaResult.username}"
+                    } else {
+                        "X Sticker ${currentPack.count + 1}"
+                    }
+                    val defaultAccessibility = if (!mediaResult.username.isNullOrBlank()) {
+                        val textSnippet = mediaResult.tweetText?.take(60) ?: ""
+                        "twitter x @${mediaResult.username} $textSnippet".trim().take(125)
+                    } else {
+                        "twitter x sticker"
+                    }
+
+                    val newItem = PackStickerItem(
+                        sourceUri = processed.uri,
+                        processedSticker = processed,
+                        isAnimated = true,
+                        name = defaultName,
+                        emojis = listOf("✖️"),
+                        accessibilityText = defaultAccessibility
+                    )
+
+                    _uiState.update { state ->
+                        val currentActive = state.activePack
+                        val updatedPack = currentActive.copy(
+                            stickers = currentActive.stickers + newItem
+                        )
+                        val updatedPacks = state.packs.map { p ->
+                            if (p.id == updatedPack.id) updatedPack else p
+                        }
+                        state.copy(
+                            isProcessing = false,
+                            processingProgress = "",
+                            packs = updatedPacks
+                        )
+                    }
+                    persistCurrentState()
+                    onSuccess()
+                } else {
+                    val msg = "No se pudo procesar el video a formato WebP compatible."
+                    _uiState.update {
+                        it.copy(
+                            isProcessing = false,
+                            processingProgress = "",
+                            errorMessage = msg
+                        )
+                    }
+                    onError(msg)
+                }
+            } catch (e: Exception) {
+                val msg = e.message ?: "Error al descargar o procesar el video de Twitter / X."
+                _uiState.update {
+                    it.copy(
+                        isProcessing = false,
+                        processingProgress = "",
+                        errorMessage = msg
+                    )
+                }
+                onError(msg)
+            }
         }
     }
 

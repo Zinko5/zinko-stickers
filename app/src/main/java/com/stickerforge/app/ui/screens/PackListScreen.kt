@@ -6,6 +6,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -566,11 +568,13 @@ fun PackFilterChipsRow(
 ) {
     val staticCount = packs.count { !it.isAnimated }
     val animatedCount = packs.count { it.isAnimated }
+    val notExportedCount = packs.count { !it.isExportedToWhatsApp }
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(SurfaceDark)
+            .horizontalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -623,6 +627,23 @@ fun PackFilterChipsRow(
                 selectedBorderColor = AnimatedPurple,
                 enabled = true,
                 selected = selectedFilter == PackFilter.ANIMATED
+            )
+        )
+
+        FilterChip(
+            selected = selectedFilter == PackFilter.NOT_EXPORTED,
+            onClick = { onSelectFilter(PackFilter.NOT_EXPORTED) },
+            label = { Text("Sin exportar ($notExportedCount)", fontSize = 12.sp) },
+            colors = FilterChipDefaults.filterChipColors(
+                selectedContainerColor = WarningAmber.copy(alpha = 0.2f),
+                selectedLabelColor = WarningAmber,
+                labelColor = TextSecondary
+            ),
+            border = FilterChipDefaults.filterChipBorder(
+                borderColor = Color(0x33FFFFFF),
+                selectedBorderColor = WarningAmber,
+                enabled = true,
+                selected = selectedFilter == PackFilter.NOT_EXPORTED
             )
         )
     }

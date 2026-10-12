@@ -65,6 +65,11 @@ class StickerViewModelTest {
         filtered = viewModel.uiState.value.filteredPacks
         assertTrue(filtered.all { it.isAnimated })
 
+        // Filtro no exportados (pendientes)
+        viewModel.setFilter(PackFilter.NOT_EXPORTED)
+        filtered = viewModel.uiState.value.filteredPacks
+        assertTrue(filtered.all { !it.isExportedToWhatsApp })
+
         // Filtro con busqueda
         viewModel.setFilter(PackFilter.ALL)
         viewModel.setSearchQuery("Gatitos")

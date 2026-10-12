@@ -24,12 +24,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -82,13 +84,66 @@ fun StickerMetadataDialog(
     var hasUserEditedKeywordsManually by remember { mutableStateOf(stickerItem.accessibilityText.isNotBlank()) }
 
     val emojiCategories = listOf(
-        "Populares" to listOf("😂", "😊", "😮", "😭", "😡", "🐸", "💃", "👌", "🗿", "😨", "❤️", "🔥", "😴", "🤔", "🤡", "😎", "🙏", "🤦", "💀", "⬜"),
+        "Populares" to listOf("😂", "😊", "😮", "😭", "😡", "✖️", "🐸", "💃", "👌", "🗿", "😨", "❤️", "🔥", "😴", "🤔", "🤡", "😎", "🙏", "🤦", "💀", "⬜"),
         "Emociones" to listOf("😂", "😊", "😮", "😭", "😡", "😨", "😴", "🤔", "🤡", "😎", "😀", "🤣", "😍", "🥳", "😱", "🥺"),
         "Gestos y Personas" to listOf("💃", "👌", "🙏", "🤦", "👍", "👎", "👏", "💪", "🤷", "👀", "🤠", "🤪", "🤐", "🤫"),
-        "Objetos y Simbolos" to listOf("🗿", "❤️", "🔥", "💀", "⬜", "✨", "🎉", "💯", "⭐", "🚀", "🎁", "💡", "💥", "💣", "☕", "⚽"),
+        "Objetos y Simbolos" to listOf("✖️", "🗿", "❤️", "🔥", "💀", "⬜", "✨", "🎉", "💯", "⭐", "🚀", "🎁", "💡", "💥", "💣", "☕", "⚽"),
         "Animales" to listOf("🐸", "🐶", "🐱", "🐭", "🦊", "🐻", "🐼", "🦁", "🐯", "🐵", "🦄", "🐔", "🐧", "🐺", "🐷", "🐝")
     )
     var selectedCategoryIndex by remember { mutableIntStateOf(0) }
+    var emojiSearchQuery by remember { mutableStateOf("") }
+
+    val emojiKeywordMap = remember {
+        mapOf(
+            "✖️" to listOf("x", "twitter", "cruz", "multiplicacion", "cancelar", "cross", "tache", "cerrar", "simbolo"),
+            "😂" to listOf("risa", "llorar de risa", "carcajada", "gracia", "jajaja", "feliz", "alegria"),
+            "😊" to listOf("sonrisa", "feliz", "tierno", "alegre", "contento"),
+            "😮" to listOf("sorpresa", "asombro", "boca", "abierta", "wow"),
+            "😭" to listOf("llanto", "triste", "llorar", "dolor", "lagrimas"),
+            "😡" to listOf("enojo", "furia", "rabia", "rojo", "molesto", "bravo"),
+            "🐸" to listOf("rana", "pepe", "sapo", "verde"),
+            "💃" to listOf("baile", "bailar", "fiesta", "mujer", "danzar"),
+            "👌" to listOf("ok", "perfecto", "mano", "bien", "aprobado"),
+            "🗿" to listOf("moai", "estatua", "sigma", "piedra", "chad", "serio"),
+            "😨" to listOf("miedo", "susto", "asustado", "panico", "temor"),
+            "❤️" to listOf("corazon", "amor", "love", "rojo", "te amo"),
+            "🔥" to listOf("fuego", "fire", "candela", "llama", "hot", "caliente"),
+            "😴" to listOf("dormir", "sueno", "cansado", "zz", "mimir"),
+            "🤔" to listOf("pensar", "duda", "pregunta", "idea", "pensativo"),
+            "🤡" to listOf("payaso", "clown", "broma", "circo", "tonto"),
+            "😎" to listOf("gafas", "lentes", "cool", "genial", "facha"),
+            "🙏" to listOf("rezar", "gracias", "por favor", "plegaria", "amen"),
+            "🤦" to listOf("facepalm", "decepcion", "mano", "cara", "verguenza"),
+            "💀" to listOf("calavera", "muerto", "morir", "huesos", "skull"),
+            "⬜" to listOf("cuadrado", "blanco", "vacio"),
+            "✨" to listOf("brillos", "estrellas", "magia", "brillante"),
+            "🎉" to listOf("fiesta", "celebracion", "cumpleanos", "confeti"),
+            "💯" to listOf("cien", "perfecto", "100", "nota"),
+            "⭐" to listOf("estrella", "star", "favorito"),
+            "🚀" to listOf("cohete", "espacio", "rocket", "despegue"),
+            "🎁" to listOf("regalo", "presente", "caja"),
+            "💡" to listOf("foco", "bombilla", "idea", "luz"),
+            "💥" to listOf("explosion", "choque", "boom", "golpe"),
+            "💣" to listOf("bomba", "boom", "dinamita"),
+            "☕" to listOf("cafe", "taza", "desayuno", "coffee"),
+            "⚽" to listOf("futbol", "balon", "pelota", "gol"),
+            "🐶" to listOf("perro", "perrito", "dog", "can"),
+            "🐱" to listOf("gato", "gatito", "michi", "cat", "felino"),
+            "🐭" to listOf("raton", "mouse"),
+            "🦊" to listOf("zorro", "fox"),
+            "🐻" to listOf("oso", "bear"),
+            "🐼" to listOf("panda"),
+            "🦁" to listOf("leon", "lion", "rey"),
+            "🐯" to listOf("tigre", "tiger"),
+            "🐵" to listOf("mono", "chango", "monkey"),
+            "🦄" to listOf("unicornio", "fantasia"),
+            "🐔" to listOf("pollo", "gallina"),
+            "🐧" to listOf("pinguino"),
+            "🐺" to listOf("lobo", "wolf"),
+            "🐷" to listOf("cerdo", "chancho", "pig"),
+            "🐝" to listOf("abeja", "bee", "miel")
+        )
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -279,57 +334,117 @@ fun StickerMetadataDialog(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Selector rapido por categorias
-                ScrollableTabRow(
-                    selectedTabIndex = selectedCategoryIndex,
-                    containerColor = SurfaceDark,
-                    contentColor = TextPrimary,
-                    edgePadding = 0.dp
-                ) {
-                    emojiCategories.forEachIndexed { idx, pair ->
-                        Tab(
-                            selected = selectedCategoryIndex == idx,
-                            onClick = { selectedCategoryIndex = idx },
-                            text = {
-                                Text(
-                                    text = pair.first,
-                                    fontSize = 11.sp,
-                                    color = if (selectedCategoryIndex == idx) EmeraldLight else TextSecondary
+                // Campo de busqueda de emojis
+                OutlinedTextField(
+                    value = emojiSearchQuery,
+                    onValueChange = { emojiSearchQuery = it },
+                    placeholder = { Text("Buscar emoji (ej: x, fuego, gato)", fontSize = 12.sp) },
+                    singleLine = true,
+                    trailingIcon = {
+                        if (emojiSearchQuery.isNotEmpty()) {
+                            IconButton(onClick = { emojiSearchQuery = "" }) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Limpiar busqueda",
+                                    tint = TextSecondary,
+                                    modifier = Modifier.size(16.dp)
                                 )
                             }
-                        )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = null,
+                                tint = TextSecondary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        focusedBorderColor = EmeraldPrimary,
+                        unfocusedBorderColor = Color(0x33FFFFFF)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                val isSearching = emojiSearchQuery.isNotBlank()
+                val activeEmojiList = if (isSearching) {
+                    val query = emojiSearchQuery.trim().lowercase()
+                    emojiKeywordMap.entries
+                        .filter { (emoji, keywords) ->
+                            emoji == query || keywords.any { it.contains(query) }
+                        }
+                        .map { it.key }
+                } else {
+                    // Selector rapido por categorias
+                    ScrollableTabRow(
+                        selectedTabIndex = selectedCategoryIndex,
+                        containerColor = SurfaceDark,
+                        contentColor = TextPrimary,
+                        edgePadding = 0.dp
+                    ) {
+                        emojiCategories.forEachIndexed { idx, pair ->
+                            Tab(
+                                selected = selectedCategoryIndex == idx,
+                                onClick = { selectedCategoryIndex = idx },
+                                text = {
+                                    Text(
+                                        text = pair.first,
+                                        fontSize = 11.sp,
+                                        color = if (selectedCategoryIndex == idx) EmeraldLight else TextSecondary
+                                    )
+                                }
+                            )
+                        }
                     }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    emojiCategories[selectedCategoryIndex].second
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Grilla de emojis de la categoria activa
-                val activeEmojiList = emojiCategories[selectedCategoryIndex].second
-                FlowRow(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 140.dp)
-                        .verticalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    activeEmojiList.forEach { emoji ->
-                        val isSelected = selectedEmojis.contains(emoji)
-                        Box(
-                            modifier = Modifier
-                                .size(34.dp)
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(if (isSelected) EmeraldPrimary.copy(alpha = 0.3f) else CardDark)
-                                .clickable {
-                                    if (isSelected) {
-                                        selectedEmojis = selectedEmojis.filterNot { it == emoji }
-                                    } else if (selectedEmojis.size < 3) {
-                                        selectedEmojis = selectedEmojis + emoji
-                                    }
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(text = emoji, fontSize = 18.sp)
+                // Grilla de emojis
+                if (isSearching && activeEmojiList.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "No se encontraron emojis para '$emojiSearchQuery'",
+                            fontSize = 12.sp,
+                            color = TextSecondary
+                        )
+                    }
+                } else {
+                    FlowRow(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 140.dp)
+                            .verticalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        activeEmojiList.forEach { emoji ->
+                            val isSelected = selectedEmojis.contains(emoji)
+                            Box(
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(if (isSelected) EmeraldPrimary.copy(alpha = 0.3f) else CardDark)
+                                    .clickable {
+                                        if (isSelected) {
+                                            selectedEmojis = selectedEmojis.filterNot { it == emoji }
+                                        } else if (selectedEmojis.size < 3) {
+                                            selectedEmojis = selectedEmojis + emoji
+                                        }
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(text = emoji, fontSize = 18.sp)
+                            }
                         }
                     }
                 }
