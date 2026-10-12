@@ -1,13 +1,23 @@
 # Active Context: Zinko Stickers
 
 ## Foco Actual
-- Sistema integral de importacion y exportacion de respaldos (.zip) para paquetes de stickers.
-- Los usuarios pueden exportar todos sus paquetes o una seleccion personalizada a un archivo ZIP con manifest.json y assets intactos (WebP, tray PNG, emojis, nombres, accesibilidad, parametros de recorte y estado de animacion).
-- Restauracion e importacion completa desde archivos ZIP con proteccion contra Zip Slip, resolucion de colisiones de identificadores y persistencia en almacenamiento seguro.
-- Especificacion tecnica detallada documentada en `Sticker_Pack_Backup_Specification.md`.
-- Proyecto completamente operativo y verificado con 32 pruebas unitarias (100% exitosas).
+- Optimizacion ergonomica de la pantalla de Vista Previa de WhatsApp (`PackPreviewScreen`) y eliminacion del desperdicio de espacio vertical en la cabecera.
+- Motor de muestreo adaptativo de video a WebP animado (`AnimatedWebpEncoder`): preservacion de duracion completa (hasta 9.6s conforme al limite estricto <10s de WhatsApp), distribucion temporal continua y compresion adaptativa bajo 500 KB.
+- Pruebas unitarias incrementadas a 33 (100% exitosas).
 
 ## Cambios Recientes
+- Rediseño Compacto de Vista Previa (`PackPreviewScreen`):
+  - Reemplazo de la cabecera sobredimensionada con chips de texto de varias lineas por `CompactPreviewControlsBar`: conmutador [Chat | Teclado] a la izquierda y swatches circulares de color de temas (Claro, Oscuro, Verde, Malla/Transparente) a la derecha, en una sola fila de ~42dp.
+  - Correccion de espaciado y ventana de insets en `Scaffold` (`contentWindowInsets = WindowInsets(0, 0, 0, 0)`) y `TopAppBar` para erradicar el vacio superior.
+  - La ficha tecnica del sticker (`StickerTechnicalInspector`) ahora es desplegable y opcional (con boton de informacion en la barra superior o al pulsar un sticker), dejando el lienzo de conversacion despejado.
+  - Correccion del limite de peso en la ficha tecnica: ahora distingue dinamicamente entre stickers animados (<500 KB) y estaticos (<100 KB), mostrando el peso en verde sin falsas advertencias de limite.
+  - Burbuja informativa en `ChatSimulationView` redisenada en formato sutil tipo chip.
+- Muestreo Continuo y Fluidez Incrementada en Stickers Animados (`AnimatedWebpEncoder`):
+  - Erradicado el limite fijo que truncaba videos a los 2 primeros segundos (24 cuadros a 12 fps).
+  - Elevada la tasa de fotogramas objetivo: hasta 10-14 FPS (videos de 7s se procesan a 10 FPS con ~70 fotogramas en vez de los 5 FPS anteriores).
+  - Limite maximo de fotogramas aumentado de 36 a 70 cuadros, aprovechando el margen de peso disponible (<500 KB) para eliminar el efecto trabado/entrecortado.
+  - Ajuste de compresion WebP con pasos mas finos (de 8 puntos) para retener la maxima fidelidad visual posible manteniendo el archivo estrictamente por debajo de 485 KB.
+  - Muestreo temporal uniforme a lo largo del 100% de la duracion del video (hasta 9.6s maximo oficial de WhatsApp).
 - Administrador de Respaldos (`StickerPackBackupManager`):
   - Creacion de `exportPacksToZip`: comprime los paquetes seleccionados junto a `manifest.json`, iconos de bandeja y WebPs correspondientes.
   - Creacion de `importPacksFromZip`: descomprime y parsea `manifest.json`, valida rutas para prevenir vulnerabilidades de Path Traversal (Zip Slip), resuelve duplicados de identificadores y traslada assets al almacenamiento seguro de la aplicacion.

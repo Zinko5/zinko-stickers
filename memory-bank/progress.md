@@ -18,6 +18,7 @@
 | Fase 5 | Pulido y validaciones | Completado | Persistencia local completa, logo Zinko en mipmaps y UI, PackPreviewScreen con simulacion de chat, proteccion OOM para >10 MB y 27 tests |
 | Extra | Stickers Animados | Completado | Codificador WebP Animado (RIFF/VP8X/ANIM/ANMF <500 KB), decodificador ImageDecoder en Coil para reproduccion en vivo en UI, extraccion GIF con Movie y exportacion a WhatsApp |
 | Extra | Respaldo e Import/Export | Completado | Empaquetado ZIP con `manifest.json`, seleccion individual o masiva de paquetes, restauracion de datos y proteccion Zip Slip |
+| Extra | Pulido Vista Previa y Muestreo de Video | Completado | Cabecera ultra-compacta (~42dp) con swatches de color, ficha tecnica desplegable con limite dinámico (<500 KB para animados), muestreo adaptativo de video hasta 9.6s sin cortes prematuros |
 
 ## Criterios de Aceptacion (Progreso)
 - [x] Al exportar, WhatsApp recibe e instala el paquete de stickers a traves del Intent oficial y ContentProvider (Fase 4).
@@ -41,6 +42,9 @@
 - [x] Documentacion tecnica exhaustiva en `Sticker_Pack_Backup_Specification.md`.
 - [x] Indicador sutil de paquetes exportados a WhatsApp ("En WhatsApp" / "Instalado") en la pantalla principal.
 - [x] Boton directo de exportacion a WhatsApp en cada tarjeta de paquete sin requerir abrir cada uno.
+- [x] Cabecera compacta con swatches circulares de temas y seleccion de modo en `PackPreviewScreen` sin desbordamiento de espacio.
+- [x] Limite de peso dinamico y coherente (<500 KB en animados, <100 KB en estaticos) en la ficha tecnica del sticker.
+- [x] Conversion de video a sticker animado que cubre toda la duracion (hasta 9.6s, maximo de WhatsApp) sin recortar los primeros segundos.
 
 ## Problemas Conocidos / Bloqueos
-- Ninguno. 32 pruebas unitarias superadas al 100% y APK de depuracion generado limpiamente en `app/build/outputs/apk/debug/app-debug.apk`.
+- Ninguno. 33 pruebas unitarias superadas al 100% y APK generado limpiamente.

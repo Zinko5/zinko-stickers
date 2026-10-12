@@ -88,11 +88,14 @@ import com.stickerforge.app.ui.theme.TextSecondary
 import com.stickerforge.app.ui.viewmodel.CurrentScreen
 import com.stickerforge.app.ui.viewmodel.StickerViewModel
 
+import androidx.compose.foundation.layout.WindowInsets
+import com.stickerforge.app.ui.theme.AnimatedPurple
+
 enum class PreviewBackground(val label: String, val color: Color) {
-    WHATSAPP_LIGHT("WhatsApp Claro", Color(0xFFEFEAE2)),
-    WHATSAPP_DARK("WhatsApp Oscuro", Color(0xFF0B141A)),
-    WHATSAPP_GREEN("Verde WhatsApp", Color(0xFF075E54)),
-    TRANSPARENCY("Transparencia", Color.Transparent)
+    WHATSAPP_LIGHT("Claro", Color(0xFFEFEAE2)),
+    WHATSAPP_DARK("Oscuro", Color(0xFF0B141A)),
+    WHATSAPP_GREEN("Verde", Color(0xFF075E54)),
+    TRANSPARENCY("Transparente", Color.Transparent)
 }
 
 enum class PreviewDisplayMode(val label: String) {
@@ -113,58 +116,88 @@ fun PackPreviewScreen(
 
     var selectedBg by remember { mutableStateOf(PreviewBackground.WHATSAPP_DARK) }
     var displayMode by remember { mutableStateOf(PreviewDisplayMode.CHAT_SIMULATION) }
-    var inspectedSticker by remember { mutableStateOf<PackStickerItem?>(activePack.stickers.firstOrNull()) }
+    var inspectedSticker by remember { mutableStateOf<PackStickerItem?>(null) }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(
-                            text = "Vista Previa de WhatsApp",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 18.sp,
-                            color = TextPrimary
-                        )
-                        Text(
-                            text = "${activePack.name} (${activePack.count} stickers)",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = TextSecondary
-                        )
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Volver",
-                            tint = TextPrimary
-                        )
-                    }
-                },
-                actions = {
-                    IconButton(onClick = onProceedToExport) {
-                        Icon(
-                            imageVector = Icons.Default.Tune,
-                            contentDescription = "Metadatos y Exportacion",
-                            tint = EmeraldLight
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = SurfaceDark)
-            )
+            Surface(
+                color = SurfaceDark,
+                tonalElevation = 3.dp,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    TopAppBar(
+                        title = {
+                            Column {
+                                Text(
+                                    text = "Vista Previa de WhatsApp",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 17.sp,
+                                    color = TextPrimary
+                                )
+                                Text(
+                                    text = "${activePack.name} (${activePack.count} stickers)",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = TextSecondary
+                                )
+                            }
+                        },
+                        navigationIcon = {
+                            IconButton(onClick = onBack) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = "Volver",
+                                    tint = TextPrimary
+                                )
+                            }
+                        },
+                        actions = {
+                            // Alternar la ficha técnica sin ocupar espacio si el usuario no la necesita
+                            IconButton(
+                                onClick = {
+                                    inspectedSticker = if (inspectedSticker != null) null else activePack.stickers.firstOrNull()
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Info,
+                                    contentDescription = "Ficha Tecnica",
+                                    tint = if (inspectedSticker != null) AccentTeal else TextSecondary
+                                )
+                            }
+                            IconButton(onClick = onProceedToExport) {
+                                Icon(
+                                    imageVector = Icons.Default.Tune,
+                                    contentDescription = "Metadatos y Exportacion",
+                                    tint = EmeraldLight
+                                )
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(containerColor = SurfaceDark),
+                        windowInsets = WindowInsets(0, 0, 0, 0)
+                    )
+
+                    // Barra compacta y moderna: Modo [Chat | Teclado] a la izquierda y Swatches de Tema a la derecha
+                    CompactPreviewControlsBar(
+                        selectedBg = selectedBg,
+                        onSelectBg = { selectedBg = it },
+                        displayMode = displayMode,
+                        onSelectMode = { displayMode = it }
+                    )
+                }
+            }
         },
         bottomBar = {
             Surface(
                 color = SurfaceDark,
-                tonalElevation = 8.dp,
+                tonalElevation = 6.dp,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -173,7 +206,7 @@ fun PackPreviewScreen(
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier
                             .weight(1f)
-                            .height(48.dp)
+                            .height(44.dp)
                     ) {
                         Text(text = "Volver al Pack", color = TextPrimary)
                     }
@@ -184,7 +217,7 @@ fun PackPreviewScreen(
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier
                             .weight(1.4f)
-                            .height(48.dp)
+                            .height(44.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.DoneAll,
@@ -208,77 +241,7 @@ fun PackPreviewScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // Controles de fondo y modo de visualizacion
-            Surface(
-                color = SurfaceDark,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                    // Selector de fondo
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        PreviewBackground.entries.forEach { bgOption ->
-                            FilterChip(
-                                selected = selectedBg == bgOption,
-                                onClick = { selectedBg = bgOption },
-                                label = {
-                                    Text(
-                                        text = bgOption.label,
-                                        fontSize = 11.sp,
-                                        fontWeight = if (selectedBg == bgOption) FontWeight.Bold else FontWeight.Normal
-                                    )
-                                },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = EmeraldPrimary,
-                                    selectedLabelColor = SurfaceDark,
-                                    containerColor = CardDark,
-                                    labelColor = TextSecondary
-                                )
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    // Selector de modo de vista (Chat vs Cuadricula de teclado)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        PreviewDisplayMode.entries.forEach { mode ->
-                            FilterChip(
-                                selected = displayMode == mode,
-                                onClick = { displayMode = mode },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = if (mode == PreviewDisplayMode.CHAT_SIMULATION) Icons.AutoMirrored.Filled.Send else Icons.Default.GridView,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                },
-                                label = {
-                                    Text(
-                                        text = mode.label,
-                                        fontSize = 11.sp,
-                                        fontWeight = if (displayMode == mode) FontWeight.Bold else FontWeight.Normal
-                                    )
-                                },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = AccentTeal,
-                                    selectedLabelColor = SurfaceDark,
-                                    containerColor = CardDark,
-                                    labelColor = TextSecondary
-                                )
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Lienzo de previsualizacion interactivo
+            // Lienzo de previsualizacion interactivo con todo el espacio vertical disponible
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -314,18 +277,137 @@ fun PackPreviewScreen(
                 }
             }
 
-            // Inspector del sticker seleccionado
-            inspectedSticker?.let { sticker ->
-                StickerTechnicalInspector(
-                    sticker = sticker,
-                    onClose = { inspectedSticker = null },
-                    onEditCrop = {
-                        viewModel.startEditingSticker(sticker)
-                    },
-                    onEditMetadata = {
-                        viewModel.startEditingMetadata(sticker)
+            // Ficha técnica desplegable del sticker seleccionado
+            AnimatedVisibility(visible = inspectedSticker != null) {
+                inspectedSticker?.let { sticker ->
+                    StickerTechnicalInspector(
+                        sticker = sticker,
+                        onClose = { inspectedSticker = null },
+                        onEditCrop = {
+                            viewModel.startEditingSticker(sticker)
+                        },
+                        onEditMetadata = {
+                            viewModel.startEditingMetadata(sticker)
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompactPreviewControlsBar(
+    selectedBg: PreviewBackground,
+    onSelectBg: (PreviewBackground) -> Unit,
+    displayMode: PreviewDisplayMode,
+    onSelectMode: (PreviewDisplayMode) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Toggle compacto de modo: [Chat | Teclado]
+        Row(
+            modifier = Modifier
+                .background(CardDark, RoundedCornerShape(10.dp))
+                .padding(2.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            val chatSelected = displayMode == PreviewDisplayMode.CHAT_SIMULATION
+            val keyboardSelected = displayMode == PreviewDisplayMode.KEYBOARD_GRID
+
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (chatSelected) AccentTeal else Color.Transparent)
+                    .clickable { onSelectMode(PreviewDisplayMode.CHAT_SIMULATION) }
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.Send,
+                        contentDescription = null,
+                        tint = if (chatSelected) SurfaceDark else TextSecondary,
+                        modifier = Modifier.size(12.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Chat",
+                        fontSize = 11.sp,
+                        fontWeight = if (chatSelected) FontWeight.Bold else FontWeight.Normal,
+                        color = if (chatSelected) SurfaceDark else TextSecondary
+                    )
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (keyboardSelected) AccentTeal else Color.Transparent)
+                    .clickable { onSelectMode(PreviewDisplayMode.KEYBOARD_GRID) }
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.GridView,
+                        contentDescription = null,
+                        tint = if (keyboardSelected) SurfaceDark else TextSecondary,
+                        modifier = Modifier.size(12.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Teclado",
+                        fontSize = 11.sp,
+                        fontWeight = if (keyboardSelected) FontWeight.Bold else FontWeight.Normal,
+                        color = if (keyboardSelected) SurfaceDark else TextSecondary
+                    )
+                }
+            }
+        }
+
+        // Swatches circulares compactos para temas
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            PreviewBackground.entries.forEach { bgOption ->
+                val isSelected = selectedBg == bgOption
+
+                Box(
+                    modifier = Modifier
+                        .size(26.dp)
+                        .clip(CircleShape)
+                        .border(
+                            width = if (isSelected) 2.dp else 1.dp,
+                            color = if (isSelected) EmeraldLight else Color.Gray.copy(alpha = 0.35f),
+                            shape = CircleShape
+                        )
+                        .background(
+                            if (bgOption == PreviewBackground.TRANSPARENCY) Color(0xFF2A3942) else bgOption.color
+                        )
+                        .clickable { onSelectBg(bgOption) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isSelected) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = bgOption.label,
+                            tint = if (bgOption == PreviewBackground.WHATSAPP_LIGHT) SurfaceDark else Color.White,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    } else if (bgOption == PreviewBackground.TRANSPARENCY) {
+                        Text(
+                            text = "🏁",
+                            fontSize = 8.sp
+                        )
                     }
-                )
+                }
             }
         }
     }
@@ -352,14 +434,13 @@ private fun ChatSimulationView(
             ) {
                 Surface(
                     color = if (isDarkBg) Color(0xFF182229) else Color(0xFFFFFFFF).copy(alpha = 0.9f),
-                    shape = RoundedCornerShape(8.dp),
-                    tonalElevation = 2.dp
+                    shape = RoundedCornerShape(12.dp)
                 ) {
                     Text(
-                        text = "Simulacion de conversacion de WhatsApp - Toca cualquier sticker para inspeccionar",
+                        text = "Simulacion de chat • Toca un sticker para inspeccionar",
                         fontSize = 11.sp,
                         color = if (isDarkBg) TextSecondary else Color(0xFF54656F),
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                         textAlign = TextAlign.Center
                     )
                 }
@@ -542,6 +623,10 @@ private fun StickerTechnicalInspector(
 
             Spacer(modifier = Modifier.height(8.dp))
 
+            val maxWeightKb = if (sticker.isAnimated) 500 else 100
+            val maxSizeBytes = maxWeightKb * 1024L
+            val isUnderLimit = sticker.processedSticker.sizeBytes <= maxSizeBytes
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -554,9 +639,9 @@ private fun StickerTechnicalInspector(
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        text = "Peso: ${sticker.processedSticker.formattedSize} (<100 KB)",
+                        text = "Peso: ${sticker.processedSticker.formattedSize} (<$maxWeightKb KB)",
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (sticker.processedSticker.isUnder100KB) EmeraldLight else Color(0xFFEA4335)
+                        color = if (isUnderLimit) EmeraldLight else Color(0xFFEA4335)
                     )
                     Text(
                         text = "Nombre: ${sticker.name.ifBlank { "Sin nombre" }}",
@@ -574,9 +659,9 @@ private fun StickerTechnicalInspector(
                         color = TextPrimary
                     )
                     Text(
-                        text = "Tipo: ${if (sticker.isAnimated) "Animado" else "Estatico WebP"}",
+                        text = "Tipo: ${if (sticker.isAnimated) "Animado WebP (<10s)" else "Estatico WebP"}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = TextSecondary
+                        color = if (sticker.isAnimated) AnimatedPurple else TextSecondary
                     )
                 }
             }

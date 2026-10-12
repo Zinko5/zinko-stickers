@@ -19,12 +19,18 @@ object AnimatedWebpEncoder {
 
     const val TARGET_SIZE_PX = 512
     const val MAX_ANIMATED_SIZE_BYTES = 500 * 1024 // 500 KB (WhatsApp spec)
-    private const val SAFETY_MARGIN_BYTES = 480 * 1024 // 480 KB
-    private const val MAX_DURATION_MS = 6000L // Max 6 segundos para garantizar <500 KB
-    private const val DEFAULT_FPS = 12 // 12 frames por segundo (balance ideal fluidez/tamano)
+    private const val SAFETY_MARGIN_BYTES = 485 * 1024 // 485 KB para garantizar aceptacion estricta
+    const val MAX_WHATSAPP_DURATION_MS = 9600L // WhatsApp spec: estrictamente < 10 segundos
+    private const val DEFAULT_FPS = 12
+
+    data class AnimationFrames(
+        val frames: List<Bitmap>,
+        val frameDurationMs: Int
+    )
 
     /**
-     * Extrae fotogramas de un video o GIF animado y genera un archivo WebP animado oficial de 512x512 px (<500 KB).
+     * Extrae fotogramas de un video o GIF animado y genera un archivo WebP animado oficial de 512x512 px (<500 KB, <10s).
+     * Muestrea a lo largo de toda la duracion del medio sin recortar prematuramente.
      */
     fun processAnimatedMedia(
         context: Context,
@@ -32,11 +38,12 @@ object AnimatedWebpEncoder {
         outputFile: File,
         cropParams: CropParameters = CropParameters()
     ): Boolean {
-        val frames = extractFrames(context, sourceUri, maxFrames = 24, fps = DEFAULT_FPS)
+        val animationData = extractFramesWithTiming(context, sourceUri)
+        val frames = animationData.frames
         if (frames.isEmpty()) return false
 
         return try {
-            val frameDurationMs = 1000 / DEFAULT_FPS // ~83 ms por cuadro
+            val frameDurationMs = animationData.frameDurationMs
 
             // 1. Ajustar cada fotograma a 512x512 transparente con recorte/escala
             val processedBitmaps = frames.map { rawBitmap ->
@@ -67,12 +74,24 @@ object AnimatedWebpEncoder {
             }
 
             // 2. Comprimir fotogramas en WebP animado ajustando la calidad para no superar 500 KB
-            var quality = 80
+            var quality = 75
             var webpBytes = encodeToAnimatedWebp(processedBitmaps, frameDurationMs, quality)
 
-            while (webpBytes.size > SAFETY_MARGIN_BYTES && quality > 20) {
-                quality -= 15
+            while (webpBytes.size > SAFETY_MARGIN_BYTES && quality > 15) {
+                quality -= 8
                 webpBytes = encodeToAnimatedWebp(processedBitmaps, frameDurationMs, quality)
+            }
+
+            // Si aun con calidad baja supera 485 KB, submuestrear a la mitad de fotogramas duplicando la duracion por cuadro
+            if (webpBytes.size > SAFETY_MARGIN_BYTES && processedBitmaps.size > 20) {
+                val halvedBitmaps = processedBitmaps.filterIndexed { index, _ -> index % 2 == 0 }
+                val newFrameDurationMs = frameDurationMs * 2
+                quality = 70
+                webpBytes = encodeToAnimatedWebp(halvedBitmaps, newFrameDurationMs, quality)
+                while (webpBytes.size > SAFETY_MARGIN_BYTES && quality > 15) {
+                    quality -= 8
+                    webpBytes = encodeToAnimatedWebp(halvedBitmaps, newFrameDurationMs, quality)
+                }
             }
 
             // Liberar bitmaps procesados
@@ -92,15 +111,14 @@ object AnimatedWebpEncoder {
     }
 
     /**
-     * Extrae una secuencia de fotogramas equidistantes desde un GIF o video.
+     * Extrae fotogramas equidistantes distribuidos por toda la duracion del video o GIF (hasta 9.6s).
+     * Calcula la duracion exacta por cuadro para mantener la velocidad real 1.0x sin cortes prematuros.
      */
     @Suppress("DEPRECATION")
-    fun extractFrames(
+    fun extractFramesWithTiming(
         context: Context,
-        uri: Uri,
-        maxFrames: Int = 24,
-        fps: Int = 12
-    ): List<Bitmap> {
+        uri: Uri
+    ): AnimationFrames {
         val frames = mutableListOf<Bitmap>()
         val mimeType = context.contentResolver.getType(uri)?.lowercase() ?: ""
 
@@ -110,20 +128,32 @@ object AnimatedWebpEncoder {
                 context.contentResolver.openInputStream(uri)?.use { stream ->
                     val movie = android.graphics.Movie.decodeStream(stream)
                     if (movie != null && movie.duration() > 0) {
-                        val durationMs = minOf(movie.duration().toLong(), MAX_DURATION_MS)
-                        val frameIntervalMs = 1000L / fps
-                        val frameCount = minOf((durationMs / frameIntervalMs).toInt(), maxFrames).coerceAtLeast(1)
+                        val totalDurationMs = movie.duration().toLong()
+                        val effectiveDurationMs = minOf(totalDurationMs, MAX_WHATSAPP_DURATION_MS)
+
+                        val targetFps = when {
+                            effectiveDurationMs <= 2500L -> 14.0
+                            effectiveDurationMs <= 4500L -> 12.0
+                            effectiveDurationMs <= 7200L -> 10.0
+                            else -> 8.0
+                        }
+                        val idealFrameCount = ((effectiveDurationMs * targetFps) / 1000.0).toInt()
+                        val frameCount = idealFrameCount.coerceIn(16, 70)
+                        val frameDurationMs = (effectiveDurationMs / frameCount).toInt().coerceAtLeast(30)
+
                         val width = movie.width().coerceAtLeast(1)
                         val height = movie.height().coerceAtLeast(1)
+                        val stepMs = effectiveDurationMs.toFloat() / frameCount
 
                         for (i in 0 until frameCount) {
-                            val timeMs = (i * frameIntervalMs).toInt()
+                            val timeMs = (i * stepMs).toInt()
                             movie.setTime(timeMs)
                             val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
                             val canvas = Canvas(bitmap)
                             movie.draw(canvas, 0f, 0f)
                             frames.add(bitmap)
                         }
+                        return AnimationFrames(frames, frameDurationMs)
                     }
                 }
             } catch (e: Exception) {
@@ -131,20 +161,29 @@ object AnimatedWebpEncoder {
             }
         }
 
-        // 2. Si no es GIF o no se extrajeron fotogramas, probar como video mediante MediaMetadataRetriever
+        // 2. Si es video (o cualquier otro medio reproducible), extraer con MediaMetadataRetriever
         if (frames.isEmpty()) {
             val retriever = MediaMetadataRetriever()
             try {
                 retriever.setDataSource(context, uri)
                 val durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                 val totalDurationMs = durationStr?.toLongOrNull() ?: 3000L
-                val effectiveDurationMs = minOf(totalDurationMs, MAX_DURATION_MS)
+                val effectiveDurationMs = minOf(totalDurationMs, MAX_WHATSAPP_DURATION_MS)
 
-                val frameIntervalMs = 1000L / fps
-                val frameCount = minOf((effectiveDurationMs / frameIntervalMs).toInt(), maxFrames).coerceAtLeast(1)
+                val targetFps = when {
+                    effectiveDurationMs <= 2500L -> 14.0
+                    effectiveDurationMs <= 4500L -> 12.0
+                    effectiveDurationMs <= 7200L -> 10.0
+                    else -> 8.0
+                }
+                val idealFrameCount = ((effectiveDurationMs * targetFps) / 1000.0).toInt()
+                val frameCount = idealFrameCount.coerceIn(16, 70)
+                val frameDurationMs = (effectiveDurationMs / frameCount).toInt().coerceAtLeast(30)
+
+                val stepUs = (effectiveDurationMs * 1000L) / frameCount
 
                 for (i in 0 until frameCount) {
-                    val timeUs = (i * frameIntervalMs) * 1000L
+                    val timeUs = i * stepUs
                     val frame = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
                         retriever.getScaledFrameAtTime(
                             timeUs,
@@ -159,6 +198,9 @@ object AnimatedWebpEncoder {
                     if (frame != null) {
                         frames.add(frame)
                     }
+                }
+                if (frames.isNotEmpty()) {
+                    return AnimationFrames(frames, frameDurationMs)
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -180,10 +222,24 @@ object AnimatedWebpEncoder {
                 if (copy != null) {
                     frames.add(copy)
                 }
+                return AnimationFrames(frames, 500)
             }
         }
 
-        return frames
+        return AnimationFrames(frames, 1000 / DEFAULT_FPS)
+    }
+
+    /**
+     * Mantiene compatibilidad con llamadas existentes devolviendo la lista simple de cuadros.
+     */
+    @Suppress("UNUSED_PARAMETER")
+    fun extractFrames(
+        context: Context,
+        uri: Uri,
+        maxFrames: Int = 36,
+        fps: Int = 12
+    ): List<Bitmap> {
+        return extractFramesWithTiming(context, uri).frames.take(maxFrames)
     }
 
     /**
