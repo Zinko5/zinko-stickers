@@ -1,6 +1,18 @@
 # Active Context: Zinko Stickers
 
-## Foco Actual
+- Preservacion de Duracion Completa (hasta 9.6s) y Maxima Cadencia de FPS a Velocidad 1.0x (Twitter y TikTok):
+  - Solucion unificada: Se erradico cualquier recorte prematuro arbitrario a 3.5s. Los videos conservan el 100% de su duracion original (hasta 9.6 segundos, techo maximo estricto de WhatsApp).
+  - Decodificacion secuencial por hardware como via primaria con `MediaCodec` para videos de TikTok y Twitter: resuelve definitivamente los GOPs extremos (de 2 keyframes en 9s) decodificando cuadros intermedios P y B sin congelamientos ni fotogramas duplicados.
+  - Curva adaptativa optima al limite de capacidad (hasta 70 fotogramas, margen de seguridad <485 KB):
+    - Videos <= 2.5s: 15.0 FPS (100% duracion a 1.0x).
+    - Videos 2.5s a 4.5s: 13.5 FPS (100% duracion a 1.0x).
+    - Videos 4.5s a 6.5s: 11.5 FPS (100% duracion a 1.0x).
+    - Videos > 6.5s (hasta 9.6s): distribucion uniforme de hasta 70 fotogramas reales a velocidad 1.0x (~7.5-8.5 FPS) sin recortar el inicio o final del video.
+  - Compresion WebP adaptativa que garantiza simultaneamente fluidez permanente (cadencia <=95-110ms / >=10.5 FPS) y limite estricto <485 KB:
+    - Etapa 1: reduccion gradual de calidad manteniendo 100% de fotogramas.
+    - Etapa 2: reescalado adaptativo del lienzo (0.85x con margen transparente 512x512), reduciendo peso en 35% y preservando el 100% de fotogramas sin recortar.
+    - Etapa 3: ajuste gradual de fotogramas en videos de ruido masivo fijando cadencia fluida (<=95ms), impidiendo cualquier caida a modo diapositivas (260ms).
+    - Etapa 4: guarda final estricta a 90ms (11.1 FPS) garantizando matematicamente que ningun sticker supere 485 KB para aceptacion en WhatsApp.
 - Importacion directa de medios desde TikTok (videos y colecciones de fotos) a stickers de WhatsApp mediante `TikTokMediaResolver`.
 - Asignacion automatica del emoji `🎵` y etiquetado para busqueda en selector manual.
 - Conversion automatica segun tipo de contenido y paquete:

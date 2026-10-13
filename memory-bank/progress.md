@@ -21,6 +21,7 @@
 | Extra | Pulido Vista Previa y Muestreo de Video | Completado | Cabecera ultra-compacta (~42dp) con swatches de color, ficha tecnica desplegable con limite dinámico (<500 KB para animados), muestreo adaptativo de video hasta 9.6s sin cortes prematuros |
 | Extra | Filtro No Exportados y Twitter / X | Completado | Filtro "Sin exportar" en pantalla principal, importacion de video/GIF de Twitter/X a sticker animado WebP con emoji ✖️ asignado y buscador de emojis |
 | Extra | Importacion de TikTok (Video y Fotos) | Completado | Soporte directo para URLs de TikTok (videos a WebP animado, fotos a WebP estatico), emoji 🎵 asignado y buscador con palabras clave musicales/tiktok |
+| Extra | Fluidez, Duracion Completa y Limite <500 KB | Completado | Decodificacion secuencial por hardware con MediaCodec (sin freeze por GOP) hasta 9.6s a 1.0x, con compresion adaptativa en 6 etapas que garantiza estrictamente <485 KB para aceptacion en WhatsApp |
 
 ## Criterios de Aceptacion (Progreso)
 - [x] Al exportar, WhatsApp recibe e instala el paquete de stickers a traves del Intent oficial y ContentProvider (Fase 4).

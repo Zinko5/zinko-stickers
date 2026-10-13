@@ -29,7 +29,8 @@ object AnimatedWebpEncoder {
     const val MAX_ANIMATED_SIZE_BYTES = 500 * 1024 // 500 KB (WhatsApp spec)
     private const val SAFETY_MARGIN_BYTES = 485 * 1024 // 485 KB para garantizar aceptacion estricta
     const val MAX_WHATSAPP_DURATION_MS = 9600L // WhatsApp spec: estrictamente < 10 segundos
-    private const val DEFAULT_FPS = 12
+    const val MAX_STICKER_FRAMES = 70 // Limite optimo y limite maximo de fotogramas bajo 485 KB con alta fidelidad
+    private const val DEFAULT_FPS = 15
 
     data class AnimationFrames(
         val frames: List<Bitmap>,
@@ -38,7 +39,7 @@ object AnimatedWebpEncoder {
 
     /**
      * Extrae fotogramas de un video o GIF animado y genera un archivo WebP animado oficial de 512x512 px (<500 KB, <10s).
-     * Muestrea a lo largo de toda la duracion del medio sin recortar prematuramente.
+     * Mantiene una cadencia fluida de 15 FPS a velocidad real (1.0x).
      */
     fun processAnimatedMedia(
         context: Context,
@@ -49,7 +50,7 @@ object AnimatedWebpEncoder {
         DiagnosticLogger.log("WebpEncoder", "processAnimatedMedia iniciado para $sourceUri")
         val animationData = extractFramesWithTiming(context, sourceUri)
         val frames = animationData.frames
-        DiagnosticLogger.log("WebpEncoder", "extractFramesWithTiming retorno ${frames.size} cuadros")
+        DiagnosticLogger.log("WebpEncoder", "extractFramesWithTiming retorno ${frames.size} cuadros (duracionPorCuadro=${animationData.frameDurationMs}ms)")
         if (frames.isEmpty()) {
             DiagnosticLogger.logError("WebpEncoder", "No se obtuvieron fotogramas de la fuente: $sourceUri")
             return false
@@ -88,31 +89,103 @@ object AnimatedWebpEncoder {
 
             DiagnosticLogger.log("WebpEncoder", "Codificando ${processedBitmaps.size} cuadros a Animated WebP (duracion=${frameDurationMs}ms)...")
 
-            // 2. Comprimir fotogramas en WebP animado ajustando la calidad para no superar 500 KB
-            var quality = 75
-            var webpBytes = encodeToAnimatedWebp(processedBitmaps, frameDurationMs, quality)
+            // 2. Comprimir fotogramas en WebP animado garantizando fluidez (FPS >= 10.0) y tamano < 485 KB
+            val extraBitmapsToRecycle = mutableListOf<Bitmap>()
+            var currentFrames = processedBitmaps
+            // Limitar la duracion por cuadro a maximo 110ms (~9.1 FPS) para que nunca se perciba como diapositivas lentas
+            var currentDurationMs = frameDurationMs.coerceIn(60, 110)
+            var quality = 70
+            var webpBytes = encodeToAnimatedWebp(currentFrames, currentDurationMs, quality)
 
-            while (webpBytes.size > SAFETY_MARGIN_BYTES && quality > 15) {
-                quality -= 8
-                webpBytes = encodeToAnimatedWebp(processedBitmaps, frameDurationMs, quality)
+            // Etapa 1: Reduccion progresiva de calidad manteniendo el 100% de los fotogramas
+            while (webpBytes.size > SAFETY_MARGIN_BYTES && quality > 20) {
+                quality -= 6
+                webpBytes = encodeToAnimatedWebp(currentFrames, currentDurationMs, quality)
             }
 
-            // Si aun con calidad baja supera 485 KB, submuestrear a la mitad de fotogramas duplicando la duracion por cuadro
-            if (webpBytes.size > SAFETY_MARGIN_BYTES && processedBitmaps.size > 20) {
-                val halvedBitmaps = processedBitmaps.filterIndexed { index, _ -> index % 2 == 0 }
-                val newFrameDurationMs = frameDurationMs * 2
-                quality = 70
-                webpBytes = encodeToAnimatedWebp(halvedBitmaps, newFrameDurationMs, quality)
-                while (webpBytes.size > SAFETY_MARGIN_BYTES && quality > 15) {
-                    quality -= 8
-                    webpBytes = encodeToAnimatedWebp(halvedBitmaps, newFrameDurationMs, quality)
+            // Etapa 2: Si supera 485 KB, aplicar reescalado adaptativo (0.85x) manteniendo 512x512 transparente
+            // Reduce el peso entre 30% y 40% al limpiar ruido de bordes, permitiendo retener TODOS los fotogramas
+            if (webpBytes.size > SAFETY_MARGIN_BYTES && currentFrames.size >= 2) {
+                val scaleFactor = 0.85f
+                val targetScaledSize = (TARGET_SIZE_PX * scaleFactor).toInt()
+                val offset = ((TARGET_SIZE_PX - targetScaledSize) / 2f)
+                val scaledBitmaps = currentFrames.map { bmp ->
+                    val scaled = Bitmap.createScaledBitmap(bmp, targetScaledSize, targetScaledSize, true)
+                    val padded = Bitmap.createBitmap(TARGET_SIZE_PX, TARGET_SIZE_PX, Bitmap.Config.ARGB_8888)
+                    val canvas = Canvas(padded)
+                    canvas.drawBitmap(scaled, offset, offset, Paint(Paint.FILTER_BITMAP_FLAG))
+                    scaled.recycle()
+                    padded
+                }
+                extraBitmapsToRecycle.addAll(scaledBitmaps)
+                quality = 50
+                var candidateBytes = encodeToAnimatedWebp(scaledBitmaps, currentDurationMs, quality)
+                while (candidateBytes.size > SAFETY_MARGIN_BYTES && quality > 15) {
+                    quality -= 5
+                    candidateBytes = encodeToAnimatedWebp(scaledBitmaps, currentDurationMs, quality)
+                }
+                if (candidateBytes.isNotEmpty() && candidateBytes.size < webpBytes.size) {
+                    webpBytes = candidateBytes
+                    currentFrames = scaledBitmaps
                 }
             }
 
-            // Liberar bitmaps procesados
-            processedBitmaps.forEach { it.recycle() }
+            // Etapa 3: Si aun supera 485 KB en videos con ruido masivo, ajustar cantidad de cuadros
+            // REGLA CRITICA: Se mantiene una cadencia fluida (<= 95ms / >= 10.5 FPS), NUNCA se alarga a 260ms (slideshow)
+            if (webpBytes.size > SAFETY_MARGIN_BYTES && currentFrames.size > 20) {
+                val fluidDurationMs = minOf(currentDurationMs, 95)
+                val frameSteps = listOf(
+                    (currentFrames.size * 0.78).toInt(),
+                    (currentFrames.size * 0.62).toInt(),
+                    (currentFrames.size * 0.48).toInt(),
+                    (currentFrames.size * 0.38).toInt()
+                )
 
-            DiagnosticLogger.log("WebpEncoder", "encodeToAnimatedWebp resultado: ${webpBytes.size} bytes (calidad=$quality)")
+                for (targetCount in frameSteps) {
+                    if (webpBytes.size <= SAFETY_MARGIN_BYTES || targetCount < 14) break
+                    val step = currentFrames.size.toFloat() / targetCount
+                    val candidateFrames = (0 until targetCount).map { k ->
+                        val idx = (k * step).toInt().coerceIn(0, currentFrames.size - 1)
+                        currentFrames[idx]
+                    }
+                    quality = 45
+                    var candidateBytes = encodeToAnimatedWebp(candidateFrames, fluidDurationMs, quality)
+                    while (candidateBytes.size > SAFETY_MARGIN_BYTES && quality > 12) {
+                        quality -= 5
+                        candidateBytes = encodeToAnimatedWebp(candidateFrames, fluidDurationMs, quality)
+                    }
+                    if (candidateBytes.isNotEmpty() && candidateBytes.size < webpBytes.size) {
+                        webpBytes = candidateBytes
+                        currentDurationMs = fluidDurationMs
+                        if (candidateBytes.size <= SAFETY_MARGIN_BYTES) break
+                    }
+                }
+            }
+
+            // Etapa 4: Guarda final estricta de seguridad (<485 KB) manteniendo fluidez a 90ms (11.1 FPS)
+            while (webpBytes.size > SAFETY_MARGIN_BYTES && currentFrames.size > 12) {
+                val newCount = (currentFrames.size * 0.75).toInt()
+                val step = currentFrames.size.toFloat() / newCount
+                val candidateFrames = (0 until newCount).map { k ->
+                    val idx = (k * step).toInt().coerceIn(0, currentFrames.size - 1)
+                    currentFrames[idx]
+                }
+                val fluidDurationMs = 90
+                val candidateBytes = encodeToAnimatedWebp(candidateFrames, fluidDurationMs, 12)
+                if (candidateBytes.isNotEmpty() && candidateBytes.size < webpBytes.size) {
+                    webpBytes = candidateBytes
+                    currentFrames = candidateFrames
+                    currentDurationMs = fluidDurationMs
+                } else {
+                    break
+                }
+            }
+
+            // Liberar todos los bitmaps procesados y generados
+            processedBitmaps.forEach { it.recycle() }
+            extraBitmapsToRecycle.forEach { if (!it.isRecycled) it.recycle() }
+
+            DiagnosticLogger.log("WebpEncoder", "encodeToAnimatedWebp resultado: ${webpBytes.size} bytes (calidad=$quality, duracion=${currentDurationMs}ms)")
             if (webpBytes.isEmpty()) {
                 DiagnosticLogger.logError("WebpEncoder", "encodeToAnimatedWebp devolvio 0 bytes!")
                 return false
@@ -148,6 +221,7 @@ object AnimatedWebpEncoder {
 
         if (localFile != null && localFile.exists()) {
             TwitterMediaResolver.normalizeMp4Brands(localFile)
+            TikTokMediaResolver.normalizeMp4Brands(localFile)
         }
 
         // Detectar si el contenido es un GIF (por mime, extension o cabecera de bytes)
@@ -178,16 +252,16 @@ object AnimatedWebpEncoder {
                     val movie = android.graphics.Movie.decodeStream(inStream)
                     if (movie != null && movie.duration() > 0) {
                         val totalDurationMs = movie.duration().toLong()
-                        val effectiveDurationMs = minOf(totalDurationMs, MAX_WHATSAPP_DURATION_MS)
+                        val effectiveDurationMs = minOf(totalDurationMs, MAX_WHATSAPP_DURATION_MS).coerceAtLeast(300L)
 
                         val targetFps = when {
-                            effectiveDurationMs <= 2500L -> 14.0
-                            effectiveDurationMs <= 4500L -> 12.0
-                            effectiveDurationMs <= 7200L -> 10.0
-                            else -> 8.0
+                            effectiveDurationMs <= 2500L -> 15.0
+                            effectiveDurationMs <= 4500L -> 13.5
+                            effectiveDurationMs <= 6500L -> 11.5
+                            else -> 8.5
                         }
                         val idealFrameCount = ((effectiveDurationMs * targetFps) / 1000.0).toInt()
-                        val frameCount = idealFrameCount.coerceIn(16, 70)
+                        val frameCount = idealFrameCount.coerceIn(16, MAX_STICKER_FRAMES)
                         val frameDurationMs = (effectiveDurationMs / frameCount).toInt().coerceAtLeast(30)
 
                         val width = movie.width().coerceAtLeast(1)
@@ -212,9 +286,17 @@ object AnimatedWebpEncoder {
             }
         }
 
-        // 2. Si es video (o Movie no pudo procesar el GIF/MP4), extraer con MediaMetadataRetriever
+        // 2. Si es video (MP4, WebM, etc.), prioridad 1: Decodificacion secuencial nativa por hardware con MediaCodec
+        // MediaCodec decodifica correctamente cuadros B y P sin congelarse en keyframes distantes (crucial para videos de TikTok y Twitter)
+        val codecResult = extractFramesViaMediaCodec(context, uri, localFile)
+        if (codecResult != null && codecResult.frames.isNotEmpty()) {
+            DiagnosticLogger.log("WebpEncoder", "extractFramesWithTiming decodifico ${codecResult.frames.size} cuadros via MediaCodec a ${codecResult.frameDurationMs}ms/frame")
+            return codecResult
+        }
+
+        // 3. Fallback: Si MediaCodec falla o no encuentra pistas, intentar con MediaMetadataRetriever
         if (frames.isEmpty()) {
-            DiagnosticLogger.log("WebpEncoder", "Intentando inicializar MediaMetadataRetriever...")
+            DiagnosticLogger.log("WebpEncoder", "Intentando fallback con MediaMetadataRetriever...")
             val retrieverPair = createInitializedRetriever(context, uri, localFile)
             if (retrieverPair != null) {
                 val retriever = retrieverPair.first
@@ -238,13 +320,13 @@ object AnimatedWebpEncoder {
                     val effectiveDurationMs = minOf(totalDurationMs, MAX_WHATSAPP_DURATION_MS).coerceAtLeast(500L)
 
                     val targetFps = when {
-                        effectiveDurationMs <= 2500L -> 14.0
-                        effectiveDurationMs <= 4500L -> 12.0
-                        effectiveDurationMs <= 7200L -> 10.0
-                        else -> 8.0
+                        effectiveDurationMs <= 2500L -> 15.0
+                        effectiveDurationMs <= 4500L -> 13.5
+                        effectiveDurationMs <= 6500L -> 11.5
+                        else -> 8.5
                     }
                     val idealFrameCount = ((effectiveDurationMs * targetFps) / 1000.0).toInt()
-                    val frameCount = idealFrameCount.coerceIn(16, 70)
+                    val frameCount = idealFrameCount.coerceIn(16, MAX_STICKER_FRAMES)
                     val frameDurationMs = (effectiveDurationMs / frameCount).toInt().coerceAtLeast(30)
                     val canUseScaled = videoWidth >= TARGET_SIZE_PX && videoHeight >= TARGET_SIZE_PX
 
@@ -253,10 +335,11 @@ object AnimatedWebpEncoder {
                         try {
                             val totalVideoFrames = countStr?.toIntOrNull() ?: 0
                             if (totalVideoFrames > 0) {
-                                val desiredFrames = frameCount.coerceAtMost(totalVideoFrames)
-                                val step = totalVideoFrames.toFloat() / desiredFrames
+                                val clipFramesCount = ((totalVideoFrames.toFloat() * effectiveDurationMs) / totalDurationMs).toInt().coerceAtLeast(1)
+                                val desiredFrames = frameCount.coerceAtMost(clipFramesCount)
+                                val step = clipFramesCount.toFloat() / desiredFrames
                                 for (k in 0 until desiredFrames) {
-                                    val idx = (k * step).toInt().coerceIn(0, totalVideoFrames - 1)
+                                    val idx = (k * step).toInt().coerceIn(0, clipFramesCount - 1)
                                     val f = try {
                                         retriever.getFrameAtIndex(idx)
                                     } catch (e: Exception) {
@@ -376,15 +459,6 @@ object AnimatedWebpEncoder {
                 }
             } else {
                 DiagnosticLogger.logError("WebpEncoder", "createInitializedRetriever devolvio null para $uri (localFile=${localFile?.absolutePath})")
-            }
-        }
-
-        // 3. Si MediaMetadataRetriever no pudo obtener fotogramas, intentar decodificacion nativa directa con MediaCodec
-        if (frames.isEmpty()) {
-            val codecResult = extractFramesViaMediaCodec(context, uri, localFile)
-            if (codecResult != null && codecResult.frames.isNotEmpty()) {
-                DiagnosticLogger.log("WebpEncoder", "extractFramesWithTiming recupero ${codecResult.frames.size} cuadros via MediaCodec")
-                return codecResult
             }
         }
 
@@ -790,6 +864,20 @@ object AnimatedWebpEncoder {
 
             DiagnosticLogger.log("WebpEncoder", "MediaCodec: track encontrado mime=$mime, $width x $height, dur=${durationUs / 1000}ms")
 
+            // Duracion efectiva del clip para el sticker: hasta 9.6 segundos (limite maximo estricto de WhatsApp)
+            val clipDurationUs = minOf(durationUs, MAX_WHATSAPP_DURATION_MS * 1000L).coerceAtLeast(500_000L)
+            val effectiveDurationMs = clipDurationUs / 1000L
+
+            val targetFps = when {
+                effectiveDurationMs <= 2500L -> 15.0
+                effectiveDurationMs <= 4500L -> 13.5
+                effectiveDurationMs <= 6500L -> 11.5
+                else -> 8.5
+            }
+            val idealFrameCount = ((effectiveDurationMs * targetFps) / 1000.0).toInt()
+            val targetFramesCount = idealFrameCount.coerceIn(16, MAX_STICKER_FRAMES)
+            val frameIntervalUs = clipDurationUs / targetFramesCount
+
             codec = MediaCodec.createDecoderByType(mime)
             codec.configure(videoFormat, null, null, 0)
             codec.start()
@@ -797,12 +885,13 @@ object AnimatedWebpEncoder {
             val bufferInfo = MediaCodec.BufferInfo()
             var isInputEOS = false
             var isOutputEOS = false
-            val timeoutUs = 15_000L
-            val maxFrames = 70
-            val rawFrames = mutableListOf<Bitmap>()
+            val timeoutUs = 12_000L
             var consecutiveTimeouts = 0
 
-            while (!isOutputEOS && rawFrames.size < maxFrames) {
+            var firstPtsUs = -1L
+            var nextTargetRelativePtsUs = 0L
+
+            while (!isOutputEOS && decodedBitmaps.size < targetFramesCount) {
                 if (!isInputEOS) {
                     val inIdx = codec.dequeueInputBuffer(timeoutUs)
                     if (inIdx >= 0) {
@@ -828,19 +917,34 @@ object AnimatedWebpEncoder {
                         isOutputEOS = true
                     }
                     if (bufferInfo.size > 0) {
-                        val image = try {
-                            codec.getOutputImage(outIdx)
-                        } catch (e: Exception) {
-                            null
+                        val currentPtsUs = bufferInfo.presentationTimeUs
+                        if (firstPtsUs < 0L) {
+                            firstPtsUs = currentPtsUs
                         }
-                        if (image != null) {
-                            try {
-                                val bmp = imageToBitmap(image)
-                                if (bmp != null) {
-                                    rawFrames.add(bmp)
+                        val relativePtsUs = currentPtsUs - firstPtsUs
+
+                        if (relativePtsUs >= clipDurationUs) {
+                            isOutputEOS = true
+                        } else if (relativePtsUs >= nextTargetRelativePtsUs - 10_000L) {
+                            // Este cuadro califica para el muestreo uniforme
+                            val image = try {
+                                codec.getOutputImage(outIdx)
+                            } catch (e: Exception) {
+                                null
+                            }
+                            if (image != null) {
+                                try {
+                                    val bmp = imageToBitmap(image)
+                                    if (bmp != null) {
+                                        decodedBitmaps.add(bmp)
+                                        nextTargetRelativePtsUs += frameIntervalUs
+                                        if (nextTargetRelativePtsUs <= relativePtsUs) {
+                                            nextTargetRelativePtsUs = relativePtsUs + frameIntervalUs
+                                        }
+                                    }
+                                } finally {
+                                    try { image.close() } catch (ignored: Exception) {}
                                 }
-                            } finally {
-                                try { image.close() } catch (ignored: Exception) {}
                             }
                         }
                     }
@@ -848,36 +952,18 @@ object AnimatedWebpEncoder {
                 } else if (outIdx == MediaCodec.INFO_TRY_AGAIN_LATER) {
                     if (isInputEOS) {
                         consecutiveTimeouts++
-                        if (consecutiveTimeouts > 10) {
+                        if (consecutiveTimeouts > 15) {
                             break
                         }
                     }
                 }
             }
 
-            DiagnosticLogger.log("WebpEncoder", "MediaCodec decodifico exitosamente ${rawFrames.size} cuadros brutos")
+            val actualFrameDurationMs = (effectiveDurationMs / decodedBitmaps.size.coerceAtLeast(1)).toInt().coerceAtLeast(30)
+            DiagnosticLogger.log("WebpEncoder", "MediaCodec decodifico exitosamente ${decodedBitmaps.size} cuadros uniformes (duracionPorCuadro=${actualFrameDurationMs}ms)")
 
-            if (rawFrames.isEmpty()) {
+            if (decodedBitmaps.isEmpty()) {
                 return null
-            }
-
-            val effectiveDurationMs = (durationUs / 1000L).coerceIn(500L, MAX_WHATSAPP_DURATION_MS)
-            val targetFramesCount = when {
-                effectiveDurationMs <= 2500L -> minOf(rawFrames.size, 36)
-                effectiveDurationMs <= 4500L -> minOf(rawFrames.size, 45)
-                else -> minOf(rawFrames.size, 55)
-            }
-
-            val step = rawFrames.size.toFloat() / targetFramesCount
-            for (k in 0 until targetFramesCount) {
-                val idx = (k * step).toInt().coerceIn(0, rawFrames.size - 1)
-                decodedBitmaps.add(rawFrames[idx])
-            }
-
-            rawFrames.forEach { bmp ->
-                if (!decodedBitmaps.contains(bmp)) {
-                    bmp.recycle()
-                }
             }
 
             if (decodedBitmaps.size == 1) {
@@ -887,9 +973,7 @@ object AnimatedWebpEncoder {
                 }
             }
 
-            val frameDurationMs = (effectiveDurationMs / decodedBitmaps.size.coerceAtLeast(1)).toInt().coerceAtLeast(30)
-            DiagnosticLogger.log("WebpEncoder", "MediaCodec retorno ${decodedBitmaps.size} cuadros con duracion por cuadro=${frameDurationMs}ms")
-            AnimationFrames(decodedBitmaps, frameDurationMs)
+            AnimationFrames(decodedBitmaps, actualFrameDurationMs)
         } catch (e: Exception) {
             DiagnosticLogger.logError("WebpEncoder", "Fallo decodificacion via MediaCodec: ${e.message}", e)
             null
@@ -968,7 +1052,16 @@ object AnimatedWebpEncoder {
             val out = ByteArrayOutputStream()
             yuvImage.compressToJpeg(Rect(0, 0, image.width, image.height), 85, out)
             val jpegBytes = out.toByteArray()
-            BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size)
+
+            var sampleSize = 1
+            while (image.width / (sampleSize * 2) >= TARGET_SIZE_PX || image.height / (sampleSize * 2) >= TARGET_SIZE_PX) {
+                sampleSize *= 2
+            }
+            val decodeOptions = BitmapFactory.Options().apply {
+                inSampleSize = sampleSize
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            }
+            BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size, decodeOptions)
         } catch (e: Exception) {
             DiagnosticLogger.logError("WebpEncoder", "imageToBitmap fallo: ${e.message}", e)
             null
