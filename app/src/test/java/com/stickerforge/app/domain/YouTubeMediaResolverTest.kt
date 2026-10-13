@@ -34,6 +34,8 @@ class YouTubeMediaResolverTest {
     fun testExtractVideoId() {
         assertEquals("3IqYxjdB8DY", YouTubeMediaResolver.extractVideoId("https://www.youtube.com/watch?v=3IqYxjdB8DY"))
         assertEquals("3IqYxjdB8DY", YouTubeMediaResolver.extractVideoId("https://youtu.be/3IqYxjdB8DY"))
+        assertEquals("FSHvN6N-f1Q", YouTubeMediaResolver.extractVideoId("https://youtu.be/FSHvN6N-f1Q"))
+        assertEquals("FSHvN6N-f1Q", YouTubeMediaResolver.extractVideoId("https://youtu.be/FSHvN6N-f1Q?si=abc123xyz"))
         assertEquals("G5aj_yu5LBE", YouTubeMediaResolver.extractVideoId("https://www.youtube.com/shorts/G5aj_yu5LBE"))
         assertEquals("G5aj_yu5LBE", YouTubeMediaResolver.extractVideoId("https://youtube.com/shorts/G5aj_yu5LBE?feature=share"))
     }
@@ -103,5 +105,10 @@ class YouTubeMediaResolverTest {
         } finally {
             tempFile.delete()
         }
+    }
+
+    @Test
+    fun testMaxVideoDownloadBytesIs10MBToEnsureFullWhatsAppDuration() {
+        assertEquals(10 * 1024 * 1024L, YouTubeMediaResolver.MAX_VIDEO_DOWNLOAD_BYTES)
     }
 }

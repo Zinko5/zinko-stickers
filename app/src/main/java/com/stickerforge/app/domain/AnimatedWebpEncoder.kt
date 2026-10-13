@@ -92,8 +92,8 @@ object AnimatedWebpEncoder {
             // 2. Comprimir fotogramas en WebP animado garantizando fluidez (FPS >= 10.0) y tamano < 485 KB
             val extraBitmapsToRecycle = mutableListOf<Bitmap>()
             var currentFrames = processedBitmaps
-            // Limitar la duracion por cuadro a maximo 110ms (~9.1 FPS) para que nunca se perciba como diapositivas lentas
-            var currentDurationMs = frameDurationMs.coerceIn(60, 110)
+            // Limitar la duracion por cuadro a maximo 140ms para preservar la duracion completa del clip (hasta 9.6s) a velocidad real 1.0x
+            var currentDurationMs = frameDurationMs.coerceIn(50, 140)
             var quality = 70
             var webpBytes = encodeToAnimatedWebp(currentFrames, currentDurationMs, quality)
 
@@ -222,6 +222,8 @@ object AnimatedWebpEncoder {
         if (localFile != null && localFile.exists()) {
             TwitterMediaResolver.normalizeMp4Brands(localFile)
             TikTokMediaResolver.normalizeMp4Brands(localFile)
+            InstagramMediaResolver.normalizeMp4Brands(localFile)
+            YouTubeMediaResolver.normalizeMp4Brands(localFile)
         }
 
         // Detectar si el contenido es un GIF (por mime, extension o cabecera de bytes)
@@ -316,7 +318,7 @@ object AnimatedWebpEncoder {
                     )
 
                     val parsedDuration = durationStr?.toLongOrNull() ?: 0L
-                    val totalDurationMs = if (parsedDuration > 0L) parsedDuration else 3000L
+                    val totalDurationMs = if (parsedDuration > 0L) parsedDuration else MAX_WHATSAPP_DURATION_MS
                     val effectiveDurationMs = minOf(totalDurationMs, MAX_WHATSAPP_DURATION_MS).coerceAtLeast(500L)
 
                     val targetFps = when {
@@ -858,9 +860,33 @@ object AnimatedWebpEncoder {
             val mime = videoFormat.getString(MediaFormat.KEY_MIME) ?: "video/avc"
             val width = videoFormat.getInteger(MediaFormat.KEY_WIDTH)
             val height = videoFormat.getInteger(MediaFormat.KEY_HEIGHT)
-            val durationUs = if (videoFormat.containsKey(MediaFormat.KEY_DURATION)) {
+            var durationUs = if (videoFormat.containsKey(MediaFormat.KEY_DURATION)) {
                 videoFormat.getLong(MediaFormat.KEY_DURATION)
-            } else 3_000_000L
+            } else -1L
+
+            if (durationUs <= 0L) {
+                // Intentar recuperar duracion via MediaMetadataRetriever
+                try {
+                    val retriever = MediaMetadataRetriever()
+                    if (localFile != null && localFile.exists()) {
+                        retriever.setDataSource(localFile.absolutePath)
+                    } else {
+                        retriever.setDataSource(context, uri)
+                    }
+                    val durStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                    val durMs = durStr?.toLongOrNull() ?: 0L
+                    if (durMs > 0L) {
+                        durationUs = durMs * 1000L
+                    }
+                    retriever.release()
+                } catch (ignored: Exception) {}
+            }
+
+            // Si la duracion sigue sin detectarse (ej. streams fMP4 / DASH truncados),
+            // se asume la duracion maxima oficial de WhatsApp (9.6s) para procesar el clip completo
+            if (durationUs <= 0L) {
+                durationUs = MAX_WHATSAPP_DURATION_MS * 1000L
+            }
 
             DiagnosticLogger.log("WebpEncoder", "MediaCodec: track encontrado mime=$mime, $width x $height, dur=${durationUs / 1000}ms")
 
@@ -889,6 +915,7 @@ object AnimatedWebpEncoder {
             var consecutiveTimeouts = 0
 
             var firstPtsUs = -1L
+            var lastPtsUs = -1L
             var nextTargetRelativePtsUs = 0L
 
             while (!isOutputEOS && decodedBitmaps.size < targetFramesCount) {
@@ -937,6 +964,7 @@ object AnimatedWebpEncoder {
                                     val bmp = imageToBitmap(image)
                                     if (bmp != null) {
                                         decodedBitmaps.add(bmp)
+                                        lastPtsUs = currentPtsUs
                                         nextTargetRelativePtsUs += frameIntervalUs
                                         if (nextTargetRelativePtsUs <= relativePtsUs) {
                                             nextTargetRelativePtsUs = relativePtsUs + frameIntervalUs
@@ -959,8 +987,13 @@ object AnimatedWebpEncoder {
                 }
             }
 
-            val actualFrameDurationMs = (effectiveDurationMs / decodedBitmaps.size.coerceAtLeast(1)).toInt().coerceAtLeast(30)
-            DiagnosticLogger.log("WebpEncoder", "MediaCodec decodifico exitosamente ${decodedBitmaps.size} cuadros uniformes (duracionPorCuadro=${actualFrameDurationMs}ms)")
+            val actualDecodedDurationMs = if (firstPtsUs >= 0L && lastPtsUs > firstPtsUs) {
+                ((lastPtsUs - firstPtsUs) / 1000L).coerceAtLeast(300L)
+            } else {
+                effectiveDurationMs
+            }
+            val actualFrameDurationMs = (actualDecodedDurationMs / decodedBitmaps.size.coerceAtLeast(1)).toInt().coerceAtLeast(30)
+            DiagnosticLogger.log("WebpEncoder", "MediaCodec decodifico exitosamente ${decodedBitmaps.size} cuadros uniformes (duracionPorCuadro=${actualFrameDurationMs}ms, duracionTotal=${actualDecodedDurationMs}ms)")
 
             if (decodedBitmaps.isEmpty()) {
                 return null

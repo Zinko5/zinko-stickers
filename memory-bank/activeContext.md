@@ -21,15 +21,21 @@
   - Boton unificado "Importar desde enlace (URL)" en TopAppBar, estados vacios y dialogos de adicion de stickers, limpiando la interfaz al eliminar botones individuales por plataforma.
   - Dialogo `UrlMediaImportDialog` con deteccion reactiva de plataforma (YouTube, Instagram, TikTok, Twitter / X, Enlace directo) con badge y emoji distintivo.
   - Aviso explicito de limite de duracion de WhatsApp: notifica que los stickers animados tienen un maximo estricto de 10 segundos (9.6s en la app) y que videos mas largos seran recortados y procesados de manera optimizada en sus primeros segundos.
-  - Optimizacion para videos largos (ej. YouTube de 20 min o 6 horas): streaming limitado por cabeceras HTTP Range y tope de 15 MB, evitando descargas masivas y caidas por memoria. Reescritura dinamica de atomos MP4 (`ftyp` a `isom` y recalculacion de tamano del atomo `mdat`) garantizando que `MediaExtractor` y `MediaCodec` lean los primeros segundos limpiamente sin fallos de contenedor.
-  - Motor multietapa de YouTube: integracion con `CobaltInstanceProvider` consultando instancias de Cobalt v10 sin autenticacion obligatoria (`api.cobalt.liubquanti.click`) y sincronizacion dinamica de servidores desde GitHub Raw, superando bloqueos de Cloudflare/Invidious.
+  - Optimizacion y duracion completa para videos largos o alta calidad (YouTube, Twitter/X, TikTok, Instagram): streaming limitado a 50 MB con cabecera HTTP Range y reescritura dinamica del atomo `mdat` al cortar la descarga. Elimina el error prematuro de 50 MB en videos de Twitter de alta tasa de bits o de larga duracion (1h+), TikTok extensos (40m+) y Reels de Instagram (15m+), descargando en 2-4 segundos solo los primeros 50 MB (suficiente para >15s de video) y extrayendo los 9.6s de WhatsApp limpiamente.
+  - En `StickerViewModel`, mensajes de error claros y amigables ante fallos de decodificacion en videos largos que no admiten streaming.
+  - Motor multietapa de YouTube (`YouTubeMediaResolver`):
+    - Tier 1 (Principal): YouTube Innertube iOS Player API nativo (`com.google.ios.youtube/20.10.4`, `clientName: IOS`), resolviendo streams directos e ininterrumpidos de video MP4 H.264 (`avc1`) desde la CDN oficial de Google (`googlevideo.com`) a 720p/480p/360p sin requerir inicio de sesion, cookies, BotGuard ni intermediarios.
+    - Tier 2 (Respaldo): Integracion con `CobaltInstanceProvider` consultando instancias de Cobalt v10 sin autenticacion obligatoria con sincronizacion dinamica de servidores desde GitHub Raw.
+    - Tier 3 (Respaldo): Endpoints de Invidious publicos.
+    - Descarga por streaming optimizada a 10 MB (con reintento adaptativo a 8 MB y 5 MB ante politicas de buffer de Google CDN que devuelven HTTP 403 en rangos mayores), cubriendo mas de 38 a 60 segundos de video a 720p/1080p en 1-2 segundos.
+    - Correccion en `AnimatedWebpEncoder`: ante cabeceras fMP4 o MP4 truncadas donde `KEY_DURATION` no este presente, el decodificador ahora recurre a `MediaMetadataRetriever` y fija por defecto `MAX_WHATSAPP_DURATION_MS` (9.6s) en lugar de truncar a 3.0s, garantizando que los stickers alcancen la duracion completa de WhatsApp.
   - Motor multietapa de Instagram:
     - Tier 1: Decodificador nativo de JavaScript empaquetado para SnapSave (desempaquetado algoritmico en Kotlin y extraccion de enlaces directos CDN / JWT), resolviendo Reels, publicaciones de foto y carruseles.
     - Tier 2: Cobalt v10 comunitario via `CobaltInstanceProvider`.
     - Tier 3: Proxy fixup `eeinstagram.com` con seguimiento de redireccion a CDN.
     - Tier 4: Extraccion directa OpenGraph con user-agent de Facebook Crawler (`facebookexternalhit/1.1`) para fotos y carruseles de alta resolucion a sticker estatico WebP (<100 KB).
   - Asignacion automatica de emojis: `▶️` para YouTube y `📸` para Instagram, indexados para busqueda manual en `StickerMetadataDialog`.
-- 61 pruebas unitarias superadas al 100%.
+- 62 pruebas unitarias superadas al 100%.
 
 ## Cambios Recientes
 - Sistema de Importacion Universal de Medios (`UniversalMediaResolver`):

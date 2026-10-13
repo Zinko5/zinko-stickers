@@ -105,7 +105,7 @@ object CobaltInstanceProvider {
      * Resuelve un enlace multimedia utilizando las instancias de Cobalt v10.
      * Retorna CobaltResolutionResult si tiene exito, o null si todas las instancias fallan.
      */
-    fun resolveMedia(targetUrl: String, videoQuality: String = "480"): CobaltResolutionResult? {
+    fun resolveMedia(targetUrl: String, videoQuality: String = "720"): CobaltResolutionResult? {
         val instances = getWorkingInstances()
         val payload = JSONObject().apply {
             put("url", targetUrl)

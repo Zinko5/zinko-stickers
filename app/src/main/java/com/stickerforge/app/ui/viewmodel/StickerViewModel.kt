@@ -480,7 +480,7 @@ class StickerViewModel(
                 } else {
                     val diagLog = DiagnosticLogger.getLog()
                     android.util.Log.e("StickerViewModel", "Fallo al procesar medio de ${mediaResult.platform.displayName}: archivo=${mediaResult.file.name}, tamano=${mediaResult.file.length()}")
-                    val msg = "No se pudo procesar el medio de ${mediaResult.platform.displayName} a formato compatible de WhatsApp."
+                    val msg = "No se pudo procesar el video de ${mediaResult.platform.displayName}. Si es un video de muy larga duracion, es posible que su formato requiera el archivo completo. Intenta con un clip mas corto o mediante YouTube."
                     _uiState.update {
                         it.copy(
                             isProcessing = false,
@@ -494,7 +494,13 @@ class StickerViewModel(
             } catch (e: Exception) {
                 val diagLog = DiagnosticLogger.getLog()
                 android.util.Log.e("StickerViewModel", "Error al descargar o procesar medio desde enlace: ${e.message}", e)
-                val msg = e.message ?: "Error al descargar o procesar el contenido desde el enlace."
+                val rawMsg = e.message ?: ""
+                val msg = when {
+                    rawMsg.contains("50 MB", ignoreCase = true) || rawMsg.contains("demasiado largo", ignoreCase = true) || rawMsg.contains("extenso", ignoreCase = true) ->
+                        "El video es demasiado extenso para procesarse directamente. Para videos de larga duracion, se recomienda usar enlaces de YouTube o un archivo mas corto."
+                    rawMsg.isNotBlank() -> rawMsg
+                    else -> "Error al descargar o procesar el contenido desde el enlace."
+                }
                 _uiState.update {
                     it.copy(
                         isProcessing = false,

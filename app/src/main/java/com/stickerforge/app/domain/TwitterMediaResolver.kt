@@ -554,32 +554,41 @@ object TwitterMediaResolver {
                 readTimeout = READ_TIMEOUT_MS
                 instanceFollowRedirects = true
                 setRequestProperty("User-Agent", USER_AGENT)
+                setRequestProperty("Range", "bytes=0-${MAX_DOWNLOAD_SIZE_BYTES - 1}")
             }
 
-            DiagnosticLogger.log("TwitterResolver", "downloadFile HTTP code=${conn.responseCode}, type=${conn.contentType}, len=${conn.contentLengthLong}")
-            if (conn.responseCode !in 200..299) {
-                throw IllegalStateException("El servidor devolvio el codigo de error ${conn.responseCode} al descargar el medio.")
+            var status = conn.responseCode
+            if (status == 416) {
+                // Si el servidor rechaza Range, reconectar sin cabecera Range
+                conn.disconnect()
+                conn = (url.openConnection() as HttpURLConnection).apply {
+                    connectTimeout = CONNECT_TIMEOUT_MS
+                    readTimeout = READ_TIMEOUT_MS
+                    instanceFollowRedirects = true
+                    setRequestProperty("User-Agent", USER_AGENT)
+                }
+                status = conn.responseCode
             }
 
-            val contentLength = conn.contentLengthLong
-            if (contentLength > MAX_DOWNLOAD_SIZE_BYTES) {
-                throw IllegalStateException("El archivo supera el limite maximo de descarga de 50 MB.")
+            DiagnosticLogger.log("TwitterResolver", "downloadFile HTTP code=$status, type=${conn.contentType}, len=${conn.contentLengthLong}")
+            if (status !in 200..299 && status != 206) {
+                throw IllegalStateException("El servidor devolvio el codigo de error $status al descargar el medio.")
             }
 
             inputStream = conn.inputStream
             outputStream = FileOutputStream(targetFile)
 
-            val buffer = ByteArray(8192)
+            val buffer = ByteArray(16 * 1024)
             var totalBytes = 0L
             var read: Int
 
             while (inputStream.read(buffer).also { read = it } != -1) {
                 totalBytes += read
-                if (totalBytes > MAX_DOWNLOAD_SIZE_BYTES) {
-                    targetFile.delete()
-                    throw IllegalStateException("La descarga supero el limite maximo de 50 MB.")
-                }
                 outputStream.write(buffer, 0, read)
+                if (totalBytes >= MAX_DOWNLOAD_SIZE_BYTES) {
+                    DiagnosticLogger.log("TwitterResolver", "Limite seguro de 50 MB alcanzado, finalizando stream para procesar los primeros 9.6s.")
+                    break
+                }
             }
 
             outputStream.flush()
@@ -653,6 +662,47 @@ object TwitterMediaResolver {
                     }
                     if (modified) {
                         DiagnosticLogger.log("Mp4Normalizer", "Cabecera ftyp normalizada para compatibilidad con Android Stagefright en ${file.name}")
+                    }
+                }
+
+                // Parchear atomo mdat truncado si el archivo fue limitado por streaming (50 MB)
+                var boxOffset = 0L
+                val boxHeader = ByteArray(8)
+                while (boxOffset + 8 <= fileLen) {
+                    raf.seek(boxOffset)
+                    raf.readFully(boxHeader)
+                    val bSize = ((boxHeader[0].toLong() and 0xFF) shl 24) or
+                            ((boxHeader[1].toLong() and 0xFF) shl 16) or
+                            ((boxHeader[2].toLong() and 0xFF) shl 8) or
+                            (boxHeader[3].toLong() and 0xFF)
+                    val bType = String(boxHeader, 4, 4, Charsets.US_ASCII)
+
+                    val actualBSize = if (bSize == 1L) {
+                        if (boxOffset + 16 > fileLen) break
+                        raf.readLong()
+                    } else if (bSize == 0L) {
+                        fileLen - boxOffset
+                    } else {
+                        bSize
+                    }
+
+                    if (actualBSize < 8) break
+
+                    if (bType == "mdat") {
+                        if (boxOffset + actualBSize > fileLen) {
+                            val remBytes = fileLen - boxOffset
+                            if (remBytes in 8..0x7FFFFFFFL) {
+                                raf.seek(boxOffset)
+                                raf.writeInt(remBytes.toInt())
+                                DiagnosticLogger.log("Mp4Normalizer", "Parcheado atomo mdat a $remBytes bytes en ${file.name}")
+                            }
+                        }
+                    }
+
+                    if (bType == "moov" || bType == "trak" || bType == "mdia" || bType == "minf" || bType == "stbl") {
+                        boxOffset += if (bSize == 1L) 16 else 8
+                    } else {
+                        boxOffset += actualBSize
                     }
                 }
 

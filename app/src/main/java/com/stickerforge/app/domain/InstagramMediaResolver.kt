@@ -394,11 +394,26 @@ object InstagramMediaResolver {
                 readTimeout = READ_TIMEOUT_MS
                 setRequestProperty("User-Agent", USER_AGENT)
                 setRequestProperty("Accept", "*/*")
+                setRequestProperty("Range", "bytes=0-${MAX_DOWNLOAD_SIZE_BYTES - 1}")
                 instanceFollowRedirects = true
             }
 
-            val status = conn.responseCode
-            if (status !in 200..299) {
+            var status = conn.responseCode
+            if (status == 416) {
+                // Si el servidor rechaza Range, reconectar sin cabecera Range
+                conn.disconnect()
+                conn = (url.openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = CONNECT_TIMEOUT_MS
+                    readTimeout = READ_TIMEOUT_MS
+                    setRequestProperty("User-Agent", USER_AGENT)
+                    setRequestProperty("Accept", "*/*")
+                    instanceFollowRedirects = true
+                }
+                status = conn.responseCode
+            }
+
+            if (status !in 200..299 && status != 206) {
                 throw IllegalStateException("Servidor respondio con HTTP $status al intentar descargar el medio de Instagram.")
             }
 
@@ -411,10 +426,11 @@ object InstagramMediaResolver {
 
             while (inStream.read(buffer).also { bytesRead = it } != -1) {
                 totalBytesRead += bytesRead
-                if (totalBytesRead > MAX_DOWNLOAD_SIZE_BYTES) {
-                    throw IllegalStateException("El archivo supera el limite maximo de descarga (50 MB).")
-                }
                 outStream.write(buffer, 0, bytesRead)
+                if (totalBytesRead >= MAX_DOWNLOAD_SIZE_BYTES) {
+                    DiagnosticLogger.log("InstagramResolver", "Limite seguro de 50 MB alcanzado, finalizando stream para procesar los primeros 9.6s.")
+                    break
+                }
             }
             outStream.flush()
 
@@ -494,6 +510,17 @@ object InstagramMediaResolver {
                             if (majorBrand.startsWith("iso5") || majorBrand.startsWith("iso6")) {
                                 raf.seek(offset + 8)
                                 raf.write("isom".toByteArray(Charsets.US_ASCII))
+                            }
+                        }
+                    }
+
+                    if (boxType == "mdat") {
+                        if (offset + actualBoxSize > fileLength) {
+                            val remainingBytes = fileLength - offset
+                            if (remainingBytes in 8..0x7FFFFFFFL) {
+                                raf.seek(offset)
+                                raf.writeInt(remainingBytes.toInt())
+                                DiagnosticLogger.log("InstagramResolver", "Parcheado atomo mdat a $remainingBytes bytes en ${file.name}")
                             }
                         }
                     }
