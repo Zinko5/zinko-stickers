@@ -43,12 +43,14 @@ object StickerProcessor {
         val outputFile = File(stickersDir, fileName)
 
         if (isAnimated) {
+            DiagnosticLogger.log("StickerProcessor", "processImage: iniciando conversion animada para $sourceUri")
             val success = AnimatedWebpEncoder.processAnimatedMedia(
                 context = context,
                 sourceUri = sourceUri,
                 outputFile = outputFile,
                 cropParams = cropParameters
             )
+            DiagnosticLogger.log("StickerProcessor", "processAnimatedMedia termino: success=$success, fileExists=${outputFile.exists()}, length=${outputFile.length()}")
             if (success && outputFile.exists() && outputFile.length() > 0) {
                 val contentUri = try {
                     FileProvider.getUriForFile(
@@ -66,6 +68,8 @@ object StickerProcessor {
                     height = TARGET_SIZE_PX,
                     sizeBytes = outputFile.length()
                 )
+            } else {
+                DiagnosticLogger.logError("StickerProcessor", "AnimatedWebpEncoder fallo: success=$success, exists=${outputFile.exists()}, size=${outputFile.length()}")
             }
         }
 

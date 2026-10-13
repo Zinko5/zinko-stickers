@@ -38,12 +38,14 @@ object TwitterMediaResolver {
      */
     fun resolveAndDownload(context: Context, inputUrl: String): TwitterMediaResult {
         val trimmed = inputUrl.trim()
+        DiagnosticLogger.log("TwitterResolver", "resolveAndDownload: $trimmed")
         if (!trimmed.startsWith("http://", ignoreCase = true) && !trimmed.startsWith("https://", ignoreCase = true)) {
             throw IllegalArgumentException("La URL debe comenzar con http:// o https://")
         }
 
         // 1. Si es un enlace directo de video o imagen twimg/mp4/gif
         if (isDirectMediaUrl(trimmed)) {
+            DiagnosticLogger.log("TwitterResolver", "Enlace directo de medio detectado: $trimmed")
             val downloadedFile = downloadFile(context, trimmed)
             val isVideo = downloadedFile.name.endsWith(".mp4", ignoreCase = true) ||
                     downloadedFile.name.endsWith(".webm", ignoreCase = true)
@@ -81,10 +83,12 @@ object TwitterMediaResolver {
         }
 
         if (tweetId == null) {
+            DiagnosticLogger.logError("TwitterResolver", "No se encontro tweetId en URL: $trimmed")
             throw IllegalArgumentException("No se encontro un ID de tweet valido en la URL proporcionada.")
         }
 
         val effectiveUsername = username ?: "i"
+        DiagnosticLogger.log("TwitterResolver", "Parsed user=$effectiveUsername, tweetId=$tweetId")
 
         // 3. Estrategia A: FxTwitter JSON API
         var resolvedMediaUrl: String? = null
@@ -92,7 +96,7 @@ object TwitterMediaResolver {
         var tweetText: String? = null
 
         try {
-            // Intentar primero con usuario y luego endpoint directo /status/
+            DiagnosticLogger.log("TwitterResolver", "Consultando FxTwitter API...")
             var jsonStr = fetchHttpString("https://api.fxtwitter.com/$effectiveUsername/status/$tweetId")
             if (jsonStr.isNullOrBlank()) {
                 jsonStr = fetchHttpString("https://api.fxtwitter.com/status/$tweetId")
@@ -111,16 +115,22 @@ object TwitterMediaResolver {
                         }
 
                         resolvedMediaUrl = extractPlayableMediaUrlFromTweetJson(tweetObj)
+                        DiagnosticLogger.log("TwitterResolver", "FxTwitter resolvio mediaUrl: $resolvedMediaUrl")
                     }
+                } else {
+                    DiagnosticLogger.log("TwitterResolver", "FxTwitter respondio no-200: code=${root.optInt("code")}, msg=${root.optString("message")}")
                 }
+            } else {
+                DiagnosticLogger.log("TwitterResolver", "FxTwitter respuesta HTTP nula o vacia")
             }
         } catch (e: Exception) {
-            // Continuar con fallback
+            DiagnosticLogger.logError("TwitterResolver", "FxTwitter fallo: ${e.message}", e)
         }
 
         // 4. Estrategia B: Twitter Syndication CDN API
         if (resolvedMediaUrl.isNullOrBlank()) {
             try {
+                DiagnosticLogger.log("TwitterResolver", "Consultando Syndication API...")
                 val token = calculateSyndicationToken(tweetId)
                 val syndicationUrl = "https://cdn.syndication.twimg.com/tweet-result?id=$tweetId&lang=en&token=$token"
                 val jsonStr = fetchHttpString(syndicationUrl)
@@ -199,36 +209,42 @@ object TwitterMediaResolver {
                             }
                         }
                     }
+                    DiagnosticLogger.log("TwitterResolver", "Syndication resolvio mediaUrl: $resolvedMediaUrl")
                 }
             } catch (e: Exception) {
-                // Continuar con fallback
+                DiagnosticLogger.logError("TwitterResolver", "Syndication fallo: ${e.message}", e)
             }
         }
 
         // 5. Estrategia C: FxTwitter Direct Video Redirect
         if (resolvedMediaUrl.isNullOrBlank()) {
             try {
+                DiagnosticLogger.log("TwitterResolver", "Consultando Direct Video Redirect...")
                 val directSubdomainUrl = "https://d.fxtwitter.com/status/$tweetId"
                 val finalUrl = resolveRedirectUrl(directSubdomainUrl)
                     ?: resolveRedirectUrl("https://d.fxtwitter.com/$effectiveUsername/status/$tweetId")
                 if (finalUrl != null && (finalUrl.contains(".mp4") || finalUrl.contains("video.twimg.com") || finalUrl.contains("tweet_video"))) {
                     resolvedMediaUrl = finalUrl
+                    DiagnosticLogger.log("TwitterResolver", "Direct Video resolvio mediaUrl: $resolvedMediaUrl")
                 }
             } catch (e: Exception) {
-                // Continuar
+                DiagnosticLogger.logError("TwitterResolver", "Direct Video fallo: ${e.message}", e)
             }
         }
 
         if (resolvedMediaUrl.isNullOrBlank()) {
+            DiagnosticLogger.logError("TwitterResolver", "No se pudo extraer ninguna URL de medio en ninguna estrategia")
             throw IllegalStateException("No se pudo extraer ningun video o GIF del tweet. Verifica que el tweet sea publico y contenga un video o GIF.")
         }
 
+        DiagnosticLogger.log("TwitterResolver", "Iniciando descarga de: $resolvedMediaUrl")
         val downloadedFile = downloadFile(context, resolvedMediaUrl)
         val isVideo = downloadedFile.name.endsWith(".mp4", ignoreCase = true) ||
                 downloadedFile.name.endsWith(".webm", ignoreCase = true) ||
                 resolvedMediaUrl.contains(".mp4", ignoreCase = true) ||
                 resolvedMediaUrl.contains("tweet_video", ignoreCase = true)
 
+        DiagnosticLogger.log("TwitterResolver", "Descarga completada: ${downloadedFile.name}, size=${downloadedFile.length()} bytes, isVideo=$isVideo, user=$authorName")
         return TwitterMediaResult(
             file = downloadedFile,
             username = authorName,
@@ -519,6 +535,7 @@ object TwitterMediaResolver {
         var outputStream: FileOutputStream? = null
 
         try {
+            DiagnosticLogger.log("TwitterResolver", "downloadFile conexion a: $downloadUrl")
             val url = URL(downloadUrl)
             conn = (url.openConnection() as HttpURLConnection).apply {
                 connectTimeout = CONNECT_TIMEOUT_MS
@@ -527,6 +544,7 @@ object TwitterMediaResolver {
                 setRequestProperty("User-Agent", USER_AGENT)
             }
 
+            DiagnosticLogger.log("TwitterResolver", "downloadFile HTTP code=${conn.responseCode}, type=${conn.contentType}, len=${conn.contentLengthLong}")
             if (conn.responseCode !in 200..299) {
                 throw IllegalStateException("El servidor devolvio el codigo de error ${conn.responseCode} al descargar el medio.")
             }
@@ -553,14 +571,133 @@ object TwitterMediaResolver {
             }
 
             outputStream.flush()
+            outputStream.close()
+            outputStream = null
+            targetFile.setReadable(true, false)
+
+            normalizeMp4Brands(targetFile)
+
+            val hexHeader = if (targetFile.exists() && targetFile.length() >= 12) {
+                try {
+                    java.io.FileInputStream(targetFile).use { fis ->
+                        val b = ByteArray(12)
+                        fis.read(b)
+                        b.joinToString(" ") { String.format("%02X", it) }
+                    }
+                } catch (e: Exception) { "error" }
+            } else "empty"
+
+            DiagnosticLogger.log("TwitterResolver", "downloadFile guardado en ${targetFile.name}, bytes=${targetFile.length()}, header=[$hexHeader]")
             return targetFile
         } catch (e: Exception) {
+            DiagnosticLogger.logError("TwitterResolver", "downloadFile fallo: ${e.message}", e)
             targetFile.delete()
             throw e
         } finally {
             try { outputStream?.close() } catch (ignored: Exception) {}
             try { inputStream?.close() } catch (ignored: Exception) {}
             conn?.disconnect()
+        }
+    }
+
+    /**
+     * Normaliza los identificadores de marca (ftyp box) y cabeceras de tablas (ctts box) de contenedores MP4.
+     * Twitter muxea GIFs como MP4 con major_brand="iso5" y ctts con flags=1.
+     * El parser nativo de Android Stagefright (SampleTable.cpp / SniffMPEG4):
+     * 1) Rechaza brands no estandar en ciertos dispositivos.
+     * 2) Rechaza estrictamente la caja ctts si 'version != 0 || flags != 0' (U32_AT(header) != 0),
+     *    arrojando ERROR_MALFORMED, lo que causa que readMetaData() aborte, countTracks() devuelva 0
+     *    y MediaMetadataRetriever / MediaExtractor fallen completamente.
+     * Al parchar ftyp a 'isom'/'mp42' y ctts version/flags a 0x00000000, Stagefright y MediaCodec
+     * reconocen y decodifican el video al 100%.
+     */
+    fun normalizeMp4Brands(file: File) {
+        if (!file.exists() || file.length() < 24) return
+        try {
+            java.io.RandomAccessFile(file, "rw").use { raf ->
+                val fileLen = raf.length()
+                val header = ByteArray(24)
+                raf.readFully(header)
+                val isFtyp = header[4] == 'f'.code.toByte() &&
+                        header[5] == 't'.code.toByte() &&
+                        header[6] == 'y'.code.toByte() &&
+                        header[7] == 'p'.code.toByte()
+                if (isFtyp) {
+                    val majorBrand = String(header, 8, 4, Charsets.US_ASCII)
+                    val standardBrands = setOf("isom", "iso2", "mp41", "mp42", "avc1", "qt  ", "3gp4", "3gp5", "3gp6")
+                    var modified = false
+                    if (majorBrand !in standardBrands) {
+                        raf.seek(8)
+                        raf.write("isom".toByteArray(Charsets.US_ASCII))
+                        modified = true
+                        DiagnosticLogger.log("Mp4Normalizer", "Normalizado major_brand de '$majorBrand' a 'isom' en ${file.name}")
+                    }
+                    val compBrand1 = String(header, 16, 4, Charsets.US_ASCII)
+                    if (compBrand1 == "iso6" || compBrand1 == "iso5") {
+                        raf.seek(16)
+                        raf.write("mp42".toByteArray(Charsets.US_ASCII))
+                        modified = true
+                        DiagnosticLogger.log("Mp4Normalizer", "Normalizado compatible_brand_1 de '$compBrand1' a 'mp42' en ${file.name}")
+                    }
+                    if (modified) {
+                        DiagnosticLogger.log("Mp4Normalizer", "Cabecera ftyp normalizada para compatibilidad con Android Stagefright en ${file.name}")
+                    }
+                }
+
+                // Escanear y normalizar la caja ctts (Composition Time to Sample)
+                // Twitter vork muxer escribe 'ver=0, flags=1' (0x00000001) en ctts.
+                // En Android libstagefright/SampleTable.cpp:
+                // if (U32_AT(header) != 0) return ERROR_MALFORMED;
+                // Parchar ver=0, flags=0 (0x00000000) elimina este fallo critico.
+                val bufferSize = 65536
+                val buffer = ByteArray(bufferSize)
+                var filePos = 0L
+                var overlap = 0
+                val cttsBytes = byteArrayOf('c'.code.toByte(), 't'.code.toByte(), 't'.code.toByte(), 's'.code.toByte())
+
+                while (filePos < fileLen) {
+                    raf.seek(filePos)
+                    val bytesRead = raf.read(buffer, overlap, bufferSize - overlap)
+                    if (bytesRead <= 0) break
+                    val totalAvailable = overlap + bytesRead
+
+                    var i = 0
+                    while (i <= totalAvailable - 4) {
+                        if (buffer[i] == cttsBytes[0] &&
+                            buffer[i + 1] == cttsBytes[1] &&
+                            buffer[i + 2] == cttsBytes[2] &&
+                            buffer[i + 3] == cttsBytes[3]
+                        ) {
+                            val cttsFileOffset = filePos - overlap + i
+                            if (cttsFileOffset >= 4 && cttsFileOffset + 8 <= fileLen) {
+                                val currentPos = raf.filePointer
+                                raf.seek(cttsFileOffset - 4)
+                                val boxSize = raf.readInt()
+                                if (boxSize >= 12 && cttsFileOffset - 4 + boxSize <= fileLen + 8) {
+                                    raf.seek(cttsFileOffset + 4)
+                                    val verFlags = raf.readInt()
+                                    if (verFlags != 0) {
+                                        raf.seek(cttsFileOffset + 4)
+                                        raf.writeInt(0) // ver=0, flags=0
+                                        DiagnosticLogger.log(
+                                            "Mp4Normalizer",
+                                            "Normalizado ctts box en offset $cttsFileOffset (verFlags=0x${Integer.toHexString(verFlags)} -> 0x0) en ${file.name}"
+                                        )
+                                    }
+                                }
+                                raf.seek(currentPos)
+                            }
+                        }
+                        i++
+                    }
+
+                    overlap = minOf(16, totalAvailable)
+                    System.arraycopy(buffer, totalAvailable - overlap, buffer, 0, overlap)
+                    filePos += bytesRead
+                }
+            }
+        } catch (e: Exception) {
+            DiagnosticLogger.logError("Mp4Normalizer", "Error normalizando ftyp/ctts en MP4 (${file.name}): ${e.message}", e)
         }
     }
 }

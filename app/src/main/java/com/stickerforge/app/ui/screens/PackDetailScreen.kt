@@ -42,6 +42,15 @@ import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
+import kotlinx.coroutines.launch
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.ui.platform.LocalClipboardManager
 import com.stickerforge.app.ui.components.StickerMetadataDialog
@@ -398,6 +407,79 @@ fun PackDetailScreen(
             },
             onImportTwitter = {
                 showTwitterImportDialog = true
+            }
+        )
+    }
+
+    uiState.lastDiagnosticLog?.let { diagText ->
+        val clipboardManager = LocalClipboardManager.current
+        val coroutineScope = rememberCoroutineScope()
+        AlertDialog(
+            onDismissRequest = { viewModel.clearDiagnosticLog() },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("⚠️", fontSize = 20.sp)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Diagnóstico de Importación",
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary,
+                        fontSize = 17.sp
+                    )
+                }
+            },
+            text = {
+                Column {
+                    Text(
+                        text = "Ocurrió un error al procesar el medio. Puedes copiar este diagnóstico para pegarlo y revisarlo en detalle:",
+                        fontSize = 13.sp,
+                        color = TextSecondary
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 280.dp)
+                            .background(Color(0xFF141A1F), shape = RoundedCornerShape(8.dp))
+                            .border(1.dp, Color(0xFF2A3942), shape = RoundedCornerShape(8.dp))
+                            .padding(10.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        SelectionContainer {
+                            Text(
+                                text = diagText,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                color = Color(0xFF81C784),
+                                lineHeight = 15.sp
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        clipboardManager.setText(AnnotatedString(diagText))
+                        coroutineScope.launch {
+                            snackbarHostState.showSnackbar("Diagnóstico copiado al portapapeles")
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ContentCopy,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Copiar Diagnóstico", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.clearDiagnosticLog() }) {
+                    Text("Cerrar", color = TextSecondary)
+                }
             }
         )
     }

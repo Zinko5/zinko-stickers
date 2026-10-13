@@ -1,11 +1,19 @@
 # Active Context: Zinko Stickers
 
 ## Foco Actual
-- Filtro de paquetes no exportados ("Sin exportar") en la pantalla principal (`PackListScreen`).
-- Extraccion e importacion directa de videos/GIFs desde URLs de Twitter / X a stickers animados (`TwitterMediaResolver`).
-- Asignacion automatica del emoji `✖️` a stickers importados desde Twitter y buscador interactivo de emojis en `StickerMetadataDialog`.
-- Soporte robusto y exhaustivo para GIFs y videos de Twitter / X: rechazo estricto de playlists HLS `.m3u8`, seleccion del MP4 de mayor bitrate, e inicializacion desacoplada de `MediaMetadataRetriever` con `FileInputStream.fd` y `context, uri`.
-- Pruebas unitarias incrementadas a 40 (100% exitosas).
+- Soporte robusto y exhaustivo para GIFs y videos de Twitter / X en `TwitterMediaResolver` y `AnimatedWebpEncoder`.
+- Resolucion definitiva del fallo en GIFs de Twitter:
+  - Hallazgo y causa raiz comprobada: Twitter muxea los GIFs (MP4s silenciosos de bucle corto) utilizando su muxer interno "Twitter-vork muxer". Dicho muxer escribe la cabecera de la caja `ctts` (Composition Time to Sample) con `version=0, flags=1` (0x00000001). En Android AOSP `libstagefright/SampleTable.cpp`, la funcion `setCompositionTimeToSampleParams` comprueba estrictamente:
+    `if (U32_AT(header) != 0) return ERROR_MALFORMED;`
+    Dado que `U32_AT(header)` es 0x00000001, Stagefright aborta la lectura de metadatos (`readMetaData() != OK`), causando que `countTracks()` devuelva 0 pistas y que `MediaMetadataRetriever` y `MediaExtractor` fallen por completo en el dispositivo real.
+  - Solucion aplicada en `TwitterMediaResolver.normalizeMp4Brands`:
+    1) Escanea el archivo MP4 y localiza la caja `ctts`.
+    2) Si los 4 bytes de version y flags (`verFlags`) son distintos de 0, los sobreescribe a `0x00000000`, eliminando el rechazo de Stagefright.
+    3) Mantiene la normalizacion de `ftyp` (`iso5`/`iso6` a `isom`/`mp42`).
+  - Robustez adicional en `AnimatedWebpEncoder`:
+    - Incorporada inicializacion multi-estrategia con re-instanciacion limpia para `MediaExtractor` (intento 1: FileDescriptor simple, intento 2: FileDescriptor con offset/longitud, intento 3: absolutePath, intento 4: context+uri).
+    - Incorporada estrategia con FileDescriptor simple en `MediaMetadataRetriever`.
+  - 43 pruebas unitarias superadas al 100%. Debug APK generado con exito.
 
 ## Cambios Recientes
 - Filtro de Paquetes No Exportados ("Sin exportar"):

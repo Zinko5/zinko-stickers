@@ -48,7 +48,8 @@
 - [x] Conversion de video a sticker animado que cubre toda la duracion (hasta 9.6s, maximo de WhatsApp) sin recortar los primeros segundos.
 - [x] Filtro de paquetes "Sin exportar" en la pantalla principal con conteo dinamico y desplazamiento horizontal suave.
 - [x] Importacion directa de medios desde Twitter / X (enlaces de tweets y enlaces directos) a stickers animados con conversion automatica a WebP.
-- [x] Asignacion por defecto del emoji ✖️ a stickers importados desde Twitter / X y busqueda rapida de emojis en el dialogo de metadatos.
+- [x] Sistema de normalizacion automatica de marcas MP4 (`iso5` / `iso6` -> `isom` / `mp42`) y atomos de tablas temporales (`ctts` flags 1 -> 0) para garantizar compatibilidad universal con el parser nativo de Android Stagefright (`SampleTable.cpp`) en GIFs de Twitter / X.
+- [x] Sistema de registro de diagnostico (`DiagnosticLogger`) con cuadro de dialogo emergente interactivo que permite copiar al portapapeles la traza de ejecucion completa ante cualquier fallo al importar desde Twitter / X.
 
 ## Problemas Conocidos / Bloqueos
-- Ninguno. 40 pruebas unitarias superadas al 100% y APK de desarrollo compilado limpiamente.
+- Ningun bloqueo activo. 43 pruebas unitarias superadas al 100% y APK de desarrollo (`app-debug.apk`) compilado limpiamente.

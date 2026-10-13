@@ -8,6 +8,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.stickerforge.app.data.StickerPackRepository
 import com.stickerforge.app.domain.ContentsJsonGenerator
+import com.stickerforge.app.domain.DiagnosticLogger
 import com.stickerforge.app.domain.ExportResult
 import com.stickerforge.app.domain.BackupExportResult
 import com.stickerforge.app.domain.BackupImportResult
@@ -64,7 +65,8 @@ data class StickerUiState(
     val exportSuccessMessage: String? = null,
     val exportErrorMessage: String? = null,
     val backupSuccessMessage: String? = null,
-    val backupErrorMessage: String? = null
+    val backupErrorMessage: String? = null,
+    val lastDiagnosticLog: String? = null
 ) {
     val activePack: StickerPack
         get() = packs.firstOrNull { it.id == activePackId } ?: packs.firstOrNull() ?: StickerPack()
@@ -386,10 +388,12 @@ class StickerViewModel(
             return
         }
 
+        DiagnosticLogger.clear()
         _uiState.update {
             it.copy(
                 isProcessing = true,
-                processingProgress = "Descargando medio de Twitter / X..."
+                processingProgress = "Descargando medio de Twitter / X...",
+                lastDiagnosticLog = null
             )
         }
 
@@ -447,34 +451,45 @@ class StickerViewModel(
                         state.copy(
                             isProcessing = false,
                             processingProgress = "",
-                            packs = updatedPacks
+                            packs = updatedPacks,
+                            lastDiagnosticLog = null
                         )
                     }
                     persistCurrentState()
                     onSuccess()
                 } else {
+                    val diagLog = DiagnosticLogger.getLog()
+                    android.util.Log.e("StickerViewModel", "Fallo al procesar medio de Twitter: archivo=${mediaResult.file.name}, tamano=${mediaResult.file.length()}")
                     val msg = "No se pudo procesar el video a formato WebP compatible."
                     _uiState.update {
                         it.copy(
                             isProcessing = false,
                             processingProgress = "",
-                            errorMessage = msg
+                            errorMessage = msg,
+                            lastDiagnosticLog = diagLog
                         )
                     }
                     onError(msg)
                 }
             } catch (e: Exception) {
+                val diagLog = DiagnosticLogger.getLog()
+                android.util.Log.e("StickerViewModel", "Error al descargar o procesar medio de Twitter: ${e.message}", e)
                 val msg = e.message ?: "Error al descargar o procesar el video de Twitter / X."
                 _uiState.update {
                     it.copy(
                         isProcessing = false,
                         processingProgress = "",
-                        errorMessage = msg
+                        errorMessage = msg,
+                        lastDiagnosticLog = diagLog
                     )
                 }
                 onError(msg)
             }
         }
+    }
+
+    fun clearDiagnosticLog() {
+        _uiState.update { it.copy(lastDiagnosticLog = null) }
     }
 
     fun startEditingSticker(sticker: PackStickerItem) {

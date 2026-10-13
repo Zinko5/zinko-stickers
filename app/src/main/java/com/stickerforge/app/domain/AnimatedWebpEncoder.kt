@@ -2,9 +2,17 @@ package com.stickerforge.app.domain
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
+import android.graphics.ImageFormat
 import android.graphics.Matrix
 import android.graphics.Paint
+import android.graphics.Rect
+import android.graphics.YuvImage
+import android.media.Image
+import android.media.MediaCodec
+import android.media.MediaExtractor
+import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
@@ -38,9 +46,14 @@ object AnimatedWebpEncoder {
         outputFile: File,
         cropParams: CropParameters = CropParameters()
     ): Boolean {
+        DiagnosticLogger.log("WebpEncoder", "processAnimatedMedia iniciado para $sourceUri")
         val animationData = extractFramesWithTiming(context, sourceUri)
         val frames = animationData.frames
-        if (frames.isEmpty()) return false
+        DiagnosticLogger.log("WebpEncoder", "extractFramesWithTiming retorno ${frames.size} cuadros")
+        if (frames.isEmpty()) {
+            DiagnosticLogger.logError("WebpEncoder", "No se obtuvieron fotogramas de la fuente: $sourceUri")
+            return false
+        }
 
         return try {
             val frameDurationMs = animationData.frameDurationMs
@@ -73,6 +86,8 @@ object AnimatedWebpEncoder {
                 canvasBitmap
             }
 
+            DiagnosticLogger.log("WebpEncoder", "Codificando ${processedBitmaps.size} cuadros a Animated WebP (duracion=${frameDurationMs}ms)...")
+
             // 2. Comprimir fotogramas en WebP animado ajustando la calidad para no superar 500 KB
             var quality = 75
             var webpBytes = encodeToAnimatedWebp(processedBitmaps, frameDurationMs, quality)
@@ -97,15 +112,20 @@ object AnimatedWebpEncoder {
             // Liberar bitmaps procesados
             processedBitmaps.forEach { it.recycle() }
 
-            if (webpBytes.isEmpty()) return false
+            DiagnosticLogger.log("WebpEncoder", "encodeToAnimatedWebp resultado: ${webpBytes.size} bytes (calidad=$quality)")
+            if (webpBytes.isEmpty()) {
+                DiagnosticLogger.logError("WebpEncoder", "encodeToAnimatedWebp devolvio 0 bytes!")
+                return false
+            }
 
             FileOutputStream(outputFile).use { fos ->
                 fos.write(webpBytes)
                 fos.flush()
             }
+            DiagnosticLogger.log("WebpEncoder", "Archivo de salida escrito con exito: ${outputFile.name}, size=${outputFile.length()} bytes")
             true
         } catch (e: Exception) {
-            e.printStackTrace()
+            DiagnosticLogger.logError("WebpEncoder", "Excepcion en processAnimatedMedia: ${e.message}", e)
             false
         }
     }
@@ -125,6 +145,10 @@ object AnimatedWebpEncoder {
         val localFile = if (uri.scheme == "file" && uri.path != null) {
             java.io.File(uri.path!!)
         } else null
+
+        if (localFile != null && localFile.exists()) {
+            TwitterMediaResolver.normalizeMp4Brands(localFile)
+        }
 
         // Detectar si el contenido es un GIF (por mime, extension o cabecera de bytes)
         var isGif = mimeType == "image/gif" ||
@@ -190,12 +214,25 @@ object AnimatedWebpEncoder {
 
         // 2. Si es video (o Movie no pudo procesar el GIF/MP4), extraer con MediaMetadataRetriever
         if (frames.isEmpty()) {
+            DiagnosticLogger.log("WebpEncoder", "Intentando inicializar MediaMetadataRetriever...")
             val retrieverPair = createInitializedRetriever(context, uri, localFile)
             if (retrieverPair != null) {
                 val retriever = retrieverPair.first
                 val closeable = retrieverPair.second
                 try {
                     val durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                    val countStr = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                        retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_FRAME_COUNT)
+                    } else null
+                    val videoWidth = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
+                    val videoHeight = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
+                    val mime = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_MIMETYPE)
+
+                    DiagnosticLogger.log(
+                        "WebpEncoder",
+                        "Retriever metadata: dur=$durationStr, frameCount=$countStr, w=$videoWidth, h=$videoHeight, mime=$mime"
+                    )
+
                     val parsedDuration = durationStr?.toLongOrNull() ?: 0L
                     val totalDurationMs = if (parsedDuration > 0L) parsedDuration else 3000L
                     val effectiveDurationMs = minOf(totalDurationMs, MAX_WHATSAPP_DURATION_MS).coerceAtLeast(500L)
@@ -209,38 +246,110 @@ object AnimatedWebpEncoder {
                     val idealFrameCount = ((effectiveDurationMs * targetFps) / 1000.0).toInt()
                     val frameCount = idealFrameCount.coerceIn(16, 70)
                     val frameDurationMs = (effectiveDurationMs / frameCount).toInt().coerceAtLeast(30)
+                    val canUseScaled = videoWidth >= TARGET_SIZE_PX && videoHeight >= TARGET_SIZE_PX
 
-                    val stepUs = (effectiveDurationMs * 1000L) / frameCount
+                    // Estrategia A: Si API >= 28 y el video reporta METADATA_KEY_VIDEO_FRAME_COUNT, extraer por indice directo
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                        try {
+                            val totalVideoFrames = countStr?.toIntOrNull() ?: 0
+                            if (totalVideoFrames > 0) {
+                                val desiredFrames = frameCount.coerceAtMost(totalVideoFrames)
+                                val step = totalVideoFrames.toFloat() / desiredFrames
+                                for (k in 0 until desiredFrames) {
+                                    val idx = (k * step).toInt().coerceIn(0, totalVideoFrames - 1)
+                                    val f = try {
+                                        retriever.getFrameAtIndex(idx)
+                                    } catch (e: Exception) {
+                                        null
+                                    }
+                                    if (f != null) {
+                                        frames.add(f)
+                                    }
+                                }
+                                DiagnosticLogger.log("WebpEncoder", "Estrategia A (getFrameAtIndex): se obtuvieron ${frames.size}/$desiredFrames cuadros")
+                            }
+                        } catch (e: Exception) {
+                            DiagnosticLogger.logError("WebpEncoder", "getFrameAtIndex fallo: ${e.message}", e)
+                        }
+                    }
 
-                    for (i in 0 until frameCount) {
-                        val timeUs = i * stepUs
-                        val frame = try {
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-                                retriever.getScaledFrameAtTime(
-                                    timeUs,
-                                    MediaMetadataRetriever.OPTION_CLOSEST,
-                                    TARGET_SIZE_PX,
-                                    TARGET_SIZE_PX
-                                )
-                            } else null
+                    // Estrategia B: Si getFrameAtIndex no extrajo fotogramas, extraer por timestamp
+                    if (frames.isEmpty()) {
+                        val stepUs = (effectiveDurationMs * 1000L) / frameCount
+                        DiagnosticLogger.log("WebpEncoder", "Iniciando Estrategia B (timestamp): framesObjetivo=$frameCount, stepUs=$stepUs")
+
+                        for (i in 0 until frameCount) {
+                            val timeUs = i * stepUs
+                            val frame = try {
+                                if (canUseScaled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                                    retriever.getScaledFrameAtTime(
+                                        timeUs,
+                                        MediaMetadataRetriever.OPTION_CLOSEST,
+                                        TARGET_SIZE_PX,
+                                        TARGET_SIZE_PX
+                                    )
+                                } else null
+                            } catch (e: Exception) {
+                                null
+                            } ?: try {
+                                retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST)
+                            } catch (e: Exception) {
+                                null
+                            } ?: try {
+                                retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                            } catch (e: Exception) {
+                                null
+                            } ?: try {
+                                retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_PREVIOUS_SYNC)
+                            } catch (e: Exception) {
+                                null
+                            } ?: try {
+                                retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_NEXT_SYNC)
+                            } catch (e: Exception) {
+                                null
+                            } ?: try {
+                                retriever.getFrameAtTime(timeUs)
+                            } catch (e: Exception) {
+                                null
+                            }
+
+                            if (frame != null) {
+                                frames.add(frame)
+                            }
+                        }
+                        DiagnosticLogger.log("WebpEncoder", "Estrategia B (timestamp): se obtuvieron ${frames.size}/$frameCount cuadros")
+                    }
+
+                    // Estrategia C: Fallback para recuperar al menos un cuadro representativo si frames sigue vacio
+                    if (frames.isEmpty()) {
+                        DiagnosticLogger.log("WebpEncoder", "Frames sigue vacio, probando Estrategia C (frame representativo)...")
+                        val fallbackFrame = try {
+                            retriever.frameAtTime
                         } catch (e: Exception) {
                             null
                         } ?: try {
-                            retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST)
+                            retriever.getFrameAtTime(0L)
                         } catch (e: Exception) {
                             null
                         } ?: try {
-                            retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                            retriever.getFrameAtTime(100_000L)
                         } catch (e: Exception) {
                             null
                         } ?: try {
-                            retriever.getFrameAtTime(timeUs)
+                            retriever.getFrameAtTime(500_000L)
                         } catch (e: Exception) {
                             null
                         }
 
-                        if (frame != null) {
-                            frames.add(frame)
+                        if (fallbackFrame != null) {
+                            frames.add(fallbackFrame)
+                            val copy = fallbackFrame.copy(Bitmap.Config.ARGB_8888, true)
+                            if (copy != null) {
+                                frames.add(copy)
+                            }
+                            DiagnosticLogger.log("WebpEncoder", "Estrategia C logro recuperar 1 cuadro representativo duplicado")
+                        } else {
+                            DiagnosticLogger.logError("WebpEncoder", "Estrategia C no pudo obtener ni un solo cuadro de MediaMetadataRetriever")
                         }
                     }
 
@@ -252,10 +361,11 @@ object AnimatedWebpEncoder {
                     }
 
                     if (frames.isNotEmpty()) {
+                        DiagnosticLogger.log("WebpEncoder", "MediaMetadataRetriever finalizo con exito: ${frames.size} cuadros")
                         return AnimationFrames(frames, frameDurationMs)
                     }
                 } catch (e: Exception) {
-                    e.printStackTrace()
+                    DiagnosticLogger.logError("WebpEncoder", "Excepcion durante lectura de MediaMetadataRetriever: ${e.message}", e)
                 } finally {
                     try {
                         closeable?.close()
@@ -264,10 +374,21 @@ object AnimatedWebpEncoder {
                         retriever.release()
                     } catch (ignored: Exception) {}
                 }
+            } else {
+                DiagnosticLogger.logError("WebpEncoder", "createInitializedRetriever devolvio null para $uri (localFile=${localFile?.absolutePath})")
             }
         }
 
-        // 3. Fallback si no se obtuvieron cuadros (ej. imagen estatica cargada en pack animado)
+        // 3. Si MediaMetadataRetriever no pudo obtener fotogramas, intentar decodificacion nativa directa con MediaCodec
+        if (frames.isEmpty()) {
+            val codecResult = extractFramesViaMediaCodec(context, uri, localFile)
+            if (codecResult != null && codecResult.frames.isNotEmpty()) {
+                DiagnosticLogger.log("WebpEncoder", "extractFramesWithTiming recupero ${codecResult.frames.size} cuadros via MediaCodec")
+                return codecResult
+            }
+        }
+
+        // 4. Fallback si no se obtuvieron cuadros (ej. imagen estatica cargada en pack animado)
         if (frames.isEmpty()) {
             val fallback = StickerProcessor.loadSampledBitmap(context, uri, TARGET_SIZE_PX)
             if (fallback != null) {
@@ -437,54 +558,420 @@ object AnimatedWebpEncoder {
         stream.write((value shr 24) and 0xFF)
     }
 
+    private fun isRetrieverValid(retriever: MediaMetadataRetriever): Boolean {
+        return try {
+            val dur = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+            val w = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
+            val mime = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_MIMETYPE)
+            val hasVideo = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_VIDEO)
+            val durValid = dur?.toLongOrNull()?.let { it > 0 } ?: false
+            val wValid = w?.toIntOrNull()?.let { it > 0 } ?: false
+            val mimeValid = mime != null && mime.startsWith("video/")
+            durValid || wValid || mimeValid || hasVideo == "yes"
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     private fun createInitializedRetriever(
         context: Context,
         uri: Uri,
         localFile: File?
     ): Pair<MediaMetadataRetriever, java.io.Closeable?>? {
-        // Estrategia 1: Archivo local con descriptor de FileInputStream (fd limpio sin offset ni longitud)
+        // Estrategia 1: FileDescriptor con offset y longitud exactos via FileInputStream
+        // Bypassea problemas de sandbox y permisos en rutas /data/user/0/
         if (localFile != null && localFile.exists()) {
             try {
                 val fis = java.io.FileInputStream(localFile)
                 val retriever = MediaMetadataRetriever()
+                retriever.setDataSource(fis.fd, 0L, localFile.length())
+                if (isRetrieverValid(retriever)) {
+                    DiagnosticLogger.log("WebpEncoder", "createInitializedRetriever: Exito con FileInputStream.fd (len=${localFile.length()})")
+                    return Pair(retriever, fis)
+                } else {
+                    DiagnosticLogger.log("WebpEncoder", "Retriever via fd(offset, len) no reporto metadata valida, probando fd simple")
+                    retriever.release()
+                    fis.close()
+                }
+            } catch (e: Exception) {
+                DiagnosticLogger.log("WebpEncoder", "setDataSource(fd, 0, len) fallo: ${e.message}")
+            }
+
+            // Estrategia 1b: FileDescriptor simple sin offset y longitud
+            try {
+                val fis = java.io.FileInputStream(localFile)
+                val retriever = MediaMetadataRetriever()
                 retriever.setDataSource(fis.fd)
-                return Pair(retriever, fis)
-            } catch (ignored: Exception) {}
+                if (isRetrieverValid(retriever)) {
+                    DiagnosticLogger.log("WebpEncoder", "createInitializedRetriever: Exito con FileInputStream.fd simple")
+                    return Pair(retriever, fis)
+                } else {
+                    DiagnosticLogger.log("WebpEncoder", "Retriever via fd simple no reporto metadata valida, probando siguiente estrategia")
+                    retriever.release()
+                    fis.close()
+                }
+            } catch (e: Exception) {
+                DiagnosticLogger.log("WebpEncoder", "setDataSource(fd) simple fallo: ${e.message}")
+            }
 
             // Estrategia 2: Ruta absoluta directa del archivo local
             try {
                 val retriever = MediaMetadataRetriever()
                 retriever.setDataSource(localFile.absolutePath)
-                return Pair(retriever, null)
-            } catch (ignored: Exception) {}
+                if (isRetrieverValid(retriever)) {
+                    DiagnosticLogger.log("WebpEncoder", "createInitializedRetriever: Exito con absolutePath (${localFile.absolutePath})")
+                    return Pair(retriever, null)
+                } else {
+                    DiagnosticLogger.log("WebpEncoder", "Retriever via absolutePath no reporto metadata valida, probando siguiente estrategia")
+                    retriever.release()
+                }
+            } catch (e: Exception) {
+                DiagnosticLogger.log("WebpEncoder", "setDataSource(path) fallo: ${e.message}")
+            }
         }
 
         // Estrategia 3: Context y URI directo (maneja internamente content:// y file://)
         try {
             val retriever = MediaMetadataRetriever()
             retriever.setDataSource(context, uri)
-            return Pair(retriever, null)
-        } catch (ignored: Exception) {}
+            if (isRetrieverValid(retriever)) {
+                DiagnosticLogger.log("WebpEncoder", "createInitializedRetriever: Exito con context + uri ($uri)")
+                return Pair(retriever, null)
+            } else {
+                DiagnosticLogger.log("WebpEncoder", "Retriever via context+uri no reporto metadata valida, probando siguiente estrategia")
+                retriever.release()
+            }
+        } catch (e: Exception) {
+            DiagnosticLogger.log("WebpEncoder", "setDataSource(context, uri) fallo: ${e.message}")
+        }
 
         // Estrategia 4: ParcelFileDescriptor via ContentResolver
         try {
             val pfd = context.contentResolver.openFileDescriptor(uri, "r")
             if (pfd != null) {
                 val retriever = MediaMetadataRetriever()
-                retriever.setDataSource(pfd.fileDescriptor)
-                return Pair(retriever, pfd)
+                retriever.setDataSource(pfd.fileDescriptor, 0L, pfd.statSize)
+                if (isRetrieverValid(retriever)) {
+                    DiagnosticLogger.log("WebpEncoder", "createInitializedRetriever: Exito con ParcelFileDescriptor")
+                    return Pair(retriever, pfd)
+                } else {
+                    retriever.release()
+                    pfd.close()
+                }
             }
-        } catch (ignored: Exception) {}
+        } catch (e: Exception) {
+            DiagnosticLogger.log("WebpEncoder", "setDataSource(pfd) fallo: ${e.message}")
+        }
 
-        // Estrategia 5: Path del URI si existe
-        if (uri.path != null) {
+        // Estrategia 5: Fallback si ninguna estrategia paso la validacion estricta, pero se puede intentar extraer
+        if (localFile != null && localFile.exists()) {
+            try {
+                val fis = java.io.FileInputStream(localFile)
+                val retriever = MediaMetadataRetriever()
+                retriever.setDataSource(fis.fd)
+                DiagnosticLogger.log("WebpEncoder", "Retriever inicializado en modo fallback via fd simple")
+                return Pair(retriever, fis)
+            } catch (ignored: Exception) {}
+
+            try {
+                val fis = java.io.FileInputStream(localFile)
+                val retriever = MediaMetadataRetriever()
+                retriever.setDataSource(fis.fd, 0L, localFile.length())
+                DiagnosticLogger.log("WebpEncoder", "Retriever inicializado en modo fallback via fd con offset")
+                return Pair(retriever, fis)
+            } catch (ignored: Exception) {}
+
             try {
                 val retriever = MediaMetadataRetriever()
-                retriever.setDataSource(uri.path)
+                retriever.setDataSource(localFile.absolutePath)
+                DiagnosticLogger.log("WebpEncoder", "Retriever inicializado en modo fallback via path")
                 return Pair(retriever, null)
             } catch (ignored: Exception) {}
         }
 
         return null
+    }
+
+    /**
+     * Decodifica directamente cuadros de video utilizando el framework nativo MediaExtractor + MediaCodec.
+     * Esencial para archivos de video como los GIFs de Twitter (MP4s silenciosos de corta duracion),
+     * donde la implementacion de MediaMetadataRetriever de ciertos fabricantes falla o devuelve metadatos nulos.
+     */
+    private fun extractFramesViaMediaCodec(
+        context: Context,
+        uri: Uri,
+        localFile: File?
+    ): AnimationFrames? {
+        var extractor = MediaExtractor()
+        var fis: java.io.FileInputStream? = null
+        var codec: MediaCodec? = null
+        val decodedBitmaps = mutableListOf<Bitmap>()
+
+        return try {
+            DiagnosticLogger.log("WebpEncoder", "Iniciando decodificacion nativa via MediaCodec...")
+
+            var sourceSet = false
+            if (localFile != null && localFile.exists()) {
+                // Intento 1: FileDescriptor simple
+                try {
+                    fis = java.io.FileInputStream(localFile)
+                    extractor.setDataSource(fis.fd)
+                    DiagnosticLogger.log("WebpEncoder", "MediaExtractor(fd) tracks=${extractor.trackCount}")
+                    if (extractor.trackCount > 0) sourceSet = true
+                } catch (e: Exception) {
+                    DiagnosticLogger.log("WebpEncoder", "MediaExtractor(fd) fallo: ${e.message}")
+                }
+
+                // Intento 2: FileDescriptor con offset y longitud
+                if (!sourceSet) {
+                    try {
+                        extractor.release()
+                        extractor = MediaExtractor()
+                        fis?.close()
+                        fis = java.io.FileInputStream(localFile)
+                        extractor.setDataSource(fis.fd, 0L, localFile.length())
+                        DiagnosticLogger.log("WebpEncoder", "MediaExtractor(fd, 0, len) tracks=${extractor.trackCount}")
+                        if (extractor.trackCount > 0) sourceSet = true
+                    } catch (e: Exception) {
+                        DiagnosticLogger.log("WebpEncoder", "MediaExtractor(fd, 0, len) fallo: ${e.message}")
+                    }
+                }
+
+                // Intento 3: Ruta absoluta directa
+                if (!sourceSet) {
+                    try {
+                        extractor.release()
+                        extractor = MediaExtractor()
+                        extractor.setDataSource(localFile.absolutePath)
+                        DiagnosticLogger.log("WebpEncoder", "MediaExtractor(path) tracks=${extractor.trackCount}")
+                        if (extractor.trackCount > 0) sourceSet = true
+                    } catch (e: Exception) {
+                        DiagnosticLogger.log("WebpEncoder", "MediaExtractor(path) fallo: ${e.message}")
+                    }
+                }
+            }
+
+            // Intento 4: Context y URI
+            if (!sourceSet) {
+                try {
+                    extractor.release()
+                    extractor = MediaExtractor()
+                    extractor.setDataSource(context, uri, null)
+                    DiagnosticLogger.log("WebpEncoder", "MediaExtractor(context, uri) tracks=${extractor.trackCount}")
+                } catch (e: Exception) {
+                    DiagnosticLogger.log("WebpEncoder", "MediaExtractor(context, uri) fallo: ${e.message}")
+                }
+            }
+
+            var videoTrack = -1
+            var videoFormat: MediaFormat? = null
+            for (i in 0 until extractor.trackCount) {
+                val f = extractor.getTrackFormat(i)
+                val m = f.getString(MediaFormat.KEY_MIME) ?: ""
+                if (m.startsWith("video/")) {
+                    videoTrack = i
+                    videoFormat = f
+                    break
+                }
+            }
+
+            if (videoTrack == -1 || videoFormat == null) {
+                DiagnosticLogger.logError("WebpEncoder", "MediaExtractor no encontro pista de video en el archivo (tracks=${extractor.trackCount})")
+                return null
+            }
+
+            extractor.selectTrack(videoTrack)
+            val mime = videoFormat.getString(MediaFormat.KEY_MIME) ?: "video/avc"
+            val width = videoFormat.getInteger(MediaFormat.KEY_WIDTH)
+            val height = videoFormat.getInteger(MediaFormat.KEY_HEIGHT)
+            val durationUs = if (videoFormat.containsKey(MediaFormat.KEY_DURATION)) {
+                videoFormat.getLong(MediaFormat.KEY_DURATION)
+            } else 3_000_000L
+
+            DiagnosticLogger.log("WebpEncoder", "MediaCodec: track encontrado mime=$mime, $width x $height, dur=${durationUs / 1000}ms")
+
+            codec = MediaCodec.createDecoderByType(mime)
+            codec.configure(videoFormat, null, null, 0)
+            codec.start()
+
+            val bufferInfo = MediaCodec.BufferInfo()
+            var isInputEOS = false
+            var isOutputEOS = false
+            val timeoutUs = 15_000L
+            val maxFrames = 70
+            val rawFrames = mutableListOf<Bitmap>()
+            var consecutiveTimeouts = 0
+
+            while (!isOutputEOS && rawFrames.size < maxFrames) {
+                if (!isInputEOS) {
+                    val inIdx = codec.dequeueInputBuffer(timeoutUs)
+                    if (inIdx >= 0) {
+                        val inBuf = codec.getInputBuffer(inIdx)
+                        if (inBuf != null) {
+                            val sampleSize = extractor.readSampleData(inBuf, 0)
+                            if (sampleSize < 0) {
+                                codec.queueInputBuffer(inIdx, 0, 0, 0L, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                                isInputEOS = true
+                            } else {
+                                val sampleTime = extractor.sampleTime
+                                codec.queueInputBuffer(inIdx, 0, sampleSize, sampleTime, 0)
+                                extractor.advance()
+                            }
+                        }
+                    }
+                }
+
+                val outIdx = codec.dequeueOutputBuffer(bufferInfo, timeoutUs)
+                if (outIdx >= 0) {
+                    consecutiveTimeouts = 0
+                    if ((bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
+                        isOutputEOS = true
+                    }
+                    if (bufferInfo.size > 0) {
+                        val image = try {
+                            codec.getOutputImage(outIdx)
+                        } catch (e: Exception) {
+                            null
+                        }
+                        if (image != null) {
+                            try {
+                                val bmp = imageToBitmap(image)
+                                if (bmp != null) {
+                                    rawFrames.add(bmp)
+                                }
+                            } finally {
+                                try { image.close() } catch (ignored: Exception) {}
+                            }
+                        }
+                    }
+                    codec.releaseOutputBuffer(outIdx, false)
+                } else if (outIdx == MediaCodec.INFO_TRY_AGAIN_LATER) {
+                    if (isInputEOS) {
+                        consecutiveTimeouts++
+                        if (consecutiveTimeouts > 10) {
+                            break
+                        }
+                    }
+                }
+            }
+
+            DiagnosticLogger.log("WebpEncoder", "MediaCodec decodifico exitosamente ${rawFrames.size} cuadros brutos")
+
+            if (rawFrames.isEmpty()) {
+                return null
+            }
+
+            val effectiveDurationMs = (durationUs / 1000L).coerceIn(500L, MAX_WHATSAPP_DURATION_MS)
+            val targetFramesCount = when {
+                effectiveDurationMs <= 2500L -> minOf(rawFrames.size, 36)
+                effectiveDurationMs <= 4500L -> minOf(rawFrames.size, 45)
+                else -> minOf(rawFrames.size, 55)
+            }
+
+            val step = rawFrames.size.toFloat() / targetFramesCount
+            for (k in 0 until targetFramesCount) {
+                val idx = (k * step).toInt().coerceIn(0, rawFrames.size - 1)
+                decodedBitmaps.add(rawFrames[idx])
+            }
+
+            rawFrames.forEach { bmp ->
+                if (!decodedBitmaps.contains(bmp)) {
+                    bmp.recycle()
+                }
+            }
+
+            if (decodedBitmaps.size == 1) {
+                val copy = decodedBitmaps[0].copy(Bitmap.Config.ARGB_8888, true)
+                if (copy != null) {
+                    decodedBitmaps.add(copy)
+                }
+            }
+
+            val frameDurationMs = (effectiveDurationMs / decodedBitmaps.size.coerceAtLeast(1)).toInt().coerceAtLeast(30)
+            DiagnosticLogger.log("WebpEncoder", "MediaCodec retorno ${decodedBitmaps.size} cuadros con duracion por cuadro=${frameDurationMs}ms")
+            AnimationFrames(decodedBitmaps, frameDurationMs)
+        } catch (e: Exception) {
+            DiagnosticLogger.logError("WebpEncoder", "Fallo decodificacion via MediaCodec: ${e.message}", e)
+            null
+        } finally {
+            try { codec?.stop() } catch (ignored: Exception) {}
+            try { codec?.release() } catch (ignored: Exception) {}
+            try { extractor.release() } catch (ignored: Exception) {}
+            try { fis?.close() } catch (ignored: Exception) {}
+        }
+    }
+
+    private fun imageToNv21(image: Image): ByteArray {
+        val width = image.width
+        val height = image.height
+        val ySize = width * height
+        val uvSize = width * height / 2
+        val nv21 = ByteArray(ySize + uvSize)
+
+        val yPlane = image.planes[0]
+        val uPlane = image.planes[1]
+        val vPlane = image.planes[2]
+
+        val yBuffer = yPlane.buffer
+        val uBuffer = uPlane.buffer
+        val vBuffer = vPlane.buffer
+
+        val yRowStride = yPlane.rowStride
+        val yPixelStride = yPlane.pixelStride
+
+        var pos = 0
+        if (yPixelStride == 1 && yRowStride == width) {
+            yBuffer.get(nv21, 0, ySize)
+            pos = ySize
+        } else {
+            for (row in 0 until height) {
+                yBuffer.position(row * yRowStride)
+                if (yPixelStride == 1) {
+                    yBuffer.get(nv21, pos, width)
+                    pos += width
+                } else {
+                    for (col in 0 until width) {
+                        nv21[pos++] = yBuffer.get(row * yRowStride + col * yPixelStride)
+                    }
+                }
+            }
+        }
+
+        val uRowStride = uPlane.rowStride
+        val uPixelStride = uPlane.pixelStride
+        val vRowStride = vPlane.rowStride
+        val vPixelStride = vPlane.pixelStride
+
+        val uvHeight = height / 2
+        val uvWidth = width / 2
+
+        for (row in 0 until uvHeight) {
+            val uRowStart = row * uRowStride
+            val vRowStart = row * vRowStride
+            for (col in 0 until uvWidth) {
+                val vIndex = vRowStart + col * vPixelStride
+                val uIndex = uRowStart + col * uPixelStride
+                if (vIndex < vBuffer.limit() && uIndex < uBuffer.limit()) {
+                    nv21[pos++] = vBuffer.get(vIndex)
+                    nv21[pos++] = uBuffer.get(uIndex)
+                }
+            }
+        }
+
+        return nv21
+    }
+
+    private fun imageToBitmap(image: Image): Bitmap? {
+        return try {
+            val nv21 = imageToNv21(image)
+            val yuvImage = YuvImage(nv21, ImageFormat.NV21, image.width, image.height, null)
+            val out = ByteArrayOutputStream()
+            yuvImage.compressToJpeg(Rect(0, 0, image.width, image.height), 85, out)
+            val jpegBytes = out.toByteArray()
+            BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size)
+        } catch (e: Exception) {
+            DiagnosticLogger.logError("WebpEncoder", "imageToBitmap fallo: ${e.message}", e)
+            null
+        }
     }
 }
