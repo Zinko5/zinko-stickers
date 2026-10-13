@@ -1,21 +1,36 @@
 # Active Context: Zinko Stickers
 
 ## Foco Actual
-- Soporte robusto y exhaustivo para GIFs y videos de Twitter / X en `TwitterMediaResolver` y `AnimatedWebpEncoder`.
-- Resolucion definitiva del fallo en GIFs de Twitter:
-  - Hallazgo y causa raiz comprobada: Twitter muxea los GIFs (MP4s silenciosos de bucle corto) utilizando su muxer interno "Twitter-vork muxer". Dicho muxer escribe la cabecera de la caja `ctts` (Composition Time to Sample) con `version=0, flags=1` (0x00000001). En Android AOSP `libstagefright/SampleTable.cpp`, la funcion `setCompositionTimeToSampleParams` comprueba estrictamente:
-    `if (U32_AT(header) != 0) return ERROR_MALFORMED;`
-    Dado que `U32_AT(header)` es 0x00000001, Stagefright aborta la lectura de metadatos (`readMetaData() != OK`), causando que `countTracks()` devuelva 0 pistas y que `MediaMetadataRetriever` y `MediaExtractor` fallen por completo en el dispositivo real.
-  - Solucion aplicada en `TwitterMediaResolver.normalizeMp4Brands`:
-    1) Escanea el archivo MP4 y localiza la caja `ctts`.
-    2) Si los 4 bytes de version y flags (`verFlags`) son distintos de 0, los sobreescribe a `0x00000000`, eliminando el rechazo de Stagefright.
-    3) Mantiene la normalizacion de `ftyp` (`iso5`/`iso6` a `isom`/`mp42`).
-  - Robustez adicional en `AnimatedWebpEncoder`:
-    - Incorporada inicializacion multi-estrategia con re-instanciacion limpia para `MediaExtractor` (intento 1: FileDescriptor simple, intento 2: FileDescriptor con offset/longitud, intento 3: absolutePath, intento 4: context+uri).
-    - Incorporada estrategia con FileDescriptor simple en `MediaMetadataRetriever`.
-  - 43 pruebas unitarias superadas al 100%. Debug APK generado con exito.
+- Importacion directa de medios desde TikTok (videos y colecciones de fotos) a stickers de WhatsApp mediante `TikTokMediaResolver`.
+- Asignacion automatica del emoji `🎵` y etiquetado para busqueda en selector manual.
+- Conversion automatica segun tipo de contenido y paquete:
+  - URLs de video (ej. `vt.tiktok.com/...` o `tiktok.com/@.../video/...`) convertidas a stickers animados WebP en paquetes animados.
+  - Colecciones de fotos (ej. `vt.tiktok.com/...` o `tiktok.com/@.../photo/...`) procesando la primera imagen como sticker estatico WebP.
+  - Opciones de importacion disponibles en paquetes animados y estaticos mediante botones de accion directa y dialogos dedicados.
+- 48 pruebas unitarias superadas al 100%. Debug APK generado con exito.
 
 ## Cambios Recientes
+- Importacion Directa desde TikTok (`TikTokMediaResolver`):
+  - Creacion de `TikTokMediaResolver` en `com.stickerforge.app.domain`:
+    - Deteccion de enlaces de TikTok (`vt.tiktok.com`, `vm.tiktok.com`, `tiktok.com/@usuario/video/...`, `tiktok.com/@usuario/photo/...`, `tiktok.com/t/...`, etc.) y enlaces directos de video o imagen.
+    - Resolucion automatica de enlaces cortos y consulta optimizada a endpoints de TikWM API con fallback entre dominios.
+    - Deteccion de colecciones de fotos (`data.images`): extraccion y descarga directa de la primera foto.
+    - Deteccion de videos (`data.play` sin marca de agua / `data.wmplay`): descarga con limite estricto de tamano (50 MB), timeouts y normalizacion de marcas MP4 (`ftyp` y `ctts`) para Stagefright.
+  - Metodo `addTikTokMediaToActivePack` en `StickerViewModel`:
+    - Descarga y conversion reactiva en segundo plano con actualizacion de progreso.
+    - Generacion de nombre por defecto ("TikTok @usuario" o "TikTok Sticker N").
+    - Asignacion automatica del emoji `🎵` y generacion de palabras clave de accesibilidad ("tiktok 🎵 @usuario ...").
+  - Interfaz de Usuario (`PackDetailScreen`):
+    - Boton `🎵` en la barra superior (TopAppBar) accesible en cualquier momento tanto en paquetes animados como estaticos.
+    - Opcion "Importar desde TikTok" en el dialogo de seleccion de medios animados (`AddAnimatedMediaOptionsDialog`) y estaticos (`AddStaticMediaOptionsDialog`).
+    - Boton directo "🎵 Importar desde TikTok" en el estado vacio de paquetes (`EmptyPackView`).
+    - Cuadro de dialogo interactivo `TikTokImportDialog` con pegado desde el portapapeles y retroalimentacion clara.
+  - Descubrimiento de Emojis y Buscador (`StickerMetadataDialog`):
+    - Incorporacion del emoji `🎵` en las categorias "Populares" y "Objetos y Simbolos".
+    - Indexacion de `🎵` en `emojiKeywordMap` bajo terminos de busqueda: "tiktok", "musica", "nota", "cancion", "sonido", "audio", "ritmo", "musical", "dance", "baile", "melodia".
+  - Pruebas Unitarias:
+    - Creacion de `TikTokMediaResolverTest` con validacion de esquema, deteccion de URLs, y resolucion real de URLs de prueba de video y colecciones de fotos.
+    - Total de pruebas unitarias del proyecto incrementado a 48, todas aprobadas con exito.
 - Filtro de Paquetes No Exportados ("Sin exportar"):
   - Incorporado el valor `NOT_EXPORTED` en `PackFilter` y en `StickerUiState.filteredPacks` (`!it.isExportedToWhatsApp`).
   - Anadido chip "Sin exportar (N)" en `PackFilterChipsRow` con color de aviso ámbar (`WarningAmber`).

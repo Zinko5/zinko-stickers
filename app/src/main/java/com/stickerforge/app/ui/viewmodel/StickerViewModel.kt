@@ -14,6 +14,7 @@ import com.stickerforge.app.domain.BackupExportResult
 import com.stickerforge.app.domain.BackupImportResult
 import com.stickerforge.app.domain.StickerPackBackupManager
 import com.stickerforge.app.domain.StickerProcessor
+import com.stickerforge.app.domain.TikTokMediaResolver
 import com.stickerforge.app.domain.TwitterMediaResolver
 import com.stickerforge.app.domain.WhatsAppExporter
 import com.stickerforge.app.model.CropParameters
@@ -475,6 +476,134 @@ class StickerViewModel(
                 val diagLog = DiagnosticLogger.getLog()
                 android.util.Log.e("StickerViewModel", "Error al descargar o procesar medio de Twitter: ${e.message}", e)
                 val msg = e.message ?: "Error al descargar o procesar el video de Twitter / X."
+                _uiState.update {
+                    it.copy(
+                        isProcessing = false,
+                        processingProgress = "",
+                        errorMessage = msg,
+                        lastDiagnosticLog = diagLog
+                    )
+                }
+                onError(msg)
+            }
+        }
+    }
+
+    /**
+     * Descarga y anade un video o foto desde TikTok directamente al paquete activo.
+     * En paquetes animados genera un sticker animado WebP; en paquetes estaticos o fotos genera un sticker estatico.
+     * Asocia por defecto el emoji "🎵" y las palabras clave de busqueda correspondientes.
+     */
+    fun addTikTokMediaToActivePack(
+        context: Context,
+        url: String,
+        onSuccess: () -> Unit = {},
+        onError: (String) -> Unit = {}
+    ) {
+        val currentPack = _uiState.value.activePack
+        val availableSlots = (30 - currentPack.count).coerceAtLeast(0)
+        if (availableSlots <= 0) {
+            val msg = "El paquete ya alcanzo el maximo de 30 stickers permitido por WhatsApp."
+            _uiState.update { it.copy(errorMessage = msg) }
+            onError(msg)
+            return
+        }
+
+        DiagnosticLogger.clear()
+        _uiState.update {
+            it.copy(
+                isProcessing = true,
+                processingProgress = "Descargando medio de TikTok...",
+                lastDiagnosticLog = null
+            )
+        }
+
+        viewModelScope.launch {
+            try {
+                val mediaResult = withContext(Dispatchers.IO) {
+                    TikTokMediaResolver.resolveAndDownload(context, url)
+                }
+
+                val willBeAnimated = currentPack.isAnimated
+
+                _uiState.update {
+                    it.copy(
+                        processingProgress = if (willBeAnimated)
+                            "Convirtiendo a sticker animado WebP..."
+                        else
+                            "Convirtiendo a sticker estatico WebP..."
+                    )
+                }
+
+                val processed = withContext(Dispatchers.IO) {
+                    val p = StickerProcessor.processImage(
+                        context = context,
+                        sourceUri = Uri.fromFile(mediaResult.file),
+                        cropParameters = CropParameters(),
+                        isAnimated = willBeAnimated
+                    )
+                    try { mediaResult.file.delete() } catch (ignored: Exception) {}
+                    p
+                }
+
+                if (processed != null) {
+                    val defaultName = if (!mediaResult.username.isNullOrBlank()) {
+                        "TikTok @${mediaResult.username}"
+                    } else {
+                        "TikTok Sticker ${currentPack.count + 1}"
+                    }
+                    val defaultAccessibility = if (!mediaResult.username.isNullOrBlank()) {
+                        val snippet = mediaResult.title?.take(60) ?: ""
+                        "tiktok 🎵 @${mediaResult.username} $snippet".trim().take(125)
+                    } else {
+                        val snippet = mediaResult.title?.take(60) ?: ""
+                        "tiktok 🎵 $snippet".trim().take(125)
+                    }
+
+                    val newItem = PackStickerItem(
+                        sourceUri = processed.uri,
+                        processedSticker = processed,
+                        isAnimated = willBeAnimated,
+                        name = defaultName,
+                        emojis = listOf("🎵"),
+                        accessibilityText = defaultAccessibility
+                    )
+
+                    _uiState.update { state ->
+                        val currentActive = state.activePack
+                        val updatedPack = currentActive.copy(
+                            stickers = currentActive.stickers + newItem
+                        )
+                        val updatedPacks = state.packs.map { p ->
+                            if (p.id == updatedPack.id) updatedPack else p
+                        }
+                        state.copy(
+                            isProcessing = false,
+                            processingProgress = "",
+                            packs = updatedPacks,
+                            lastDiagnosticLog = null
+                        )
+                    }
+                    persistCurrentState()
+                    onSuccess()
+                } else {
+                    val diagLog = DiagnosticLogger.getLog()
+                    android.util.Log.e("StickerViewModel", "Fallo al procesar medio de TikTok: archivo=${mediaResult.file.name}, tamano=${mediaResult.file.length()}")
+                    val msg = "No se pudo procesar el medio a formato WebP compatible."
+                    _uiState.update {
+                        it.copy(
+                            isProcessing = false,
+                            processingProgress = "",
+                            errorMessage = msg,
+                            lastDiagnosticLog = diagLog
+                        )
+                    }
+                    onError(msg)
+                }
+            } catch (e: Exception) {
+                val diagLog = DiagnosticLogger.getLog()
+                android.util.Log.e("StickerViewModel", "Error al descargar o procesar medio de TikTok: ${e.message}", e)
+                val msg = e.message ?: "Error al descargar o procesar el contenido de TikTok."
                 _uiState.update {
                     it.copy(
                         isProcessing = false,

@@ -133,7 +133,9 @@ fun PackDetailScreen(
     var showRenameDialog by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showTwitterImportDialog by remember { mutableStateOf(false) }
+    var showTikTokImportDialog by remember { mutableStateOf(false) }
     var showAddAnimatedOptionsDialog by remember { mutableStateOf(false) }
+    var showAddStaticOptionsDialog by remember { mutableStateOf(false) }
 
     // Multi-image photo picker (permite seleccionar hasta 30 de una sola vez)
     val multiImagePicker = rememberLauncherForActivityResult(
@@ -148,9 +150,7 @@ fun PackDetailScreen(
         if (activePack.isAnimated) {
             showAddAnimatedOptionsDialog = true
         } else {
-            multiImagePicker.launch(
-                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-            )
+            showAddStaticOptionsDialog = true
         }
     }
 
@@ -239,6 +239,12 @@ fun PackDetailScreen(
                             )
                         }
                     }
+                    IconButton(onClick = { showTikTokImportDialog = true }) {
+                        Text(
+                            text = "🎵",
+                            fontSize = 18.sp
+                        )
+                    }
                     IconButton(onClick = { viewModel.navigateTo(CurrentScreen.PREVIEW) }) {
                         Icon(
                             imageVector = Icons.Default.Visibility,
@@ -323,15 +329,9 @@ fun PackDetailScreen(
             if (activePack.stickers.isEmpty()) {
                 EmptyPackView(
                     isAnimated = activePack.isAnimated,
-                    onSelectImages = {
-                        multiImagePicker.launch(
-                            PickVisualMediaRequest(
-                                if (activePack.isAnimated) ActivityResultContracts.PickVisualMedia.ImageAndVideo
-                                else ActivityResultContracts.PickVisualMedia.ImageOnly
-                            )
-                        )
-                    },
+                    onSelectImages = onAddMediaClick,
                     onImportTwitter = if (activePack.isAnimated) { { showTwitterImportDialog = true } } else null,
+                    onImportTikTok = { showTikTokImportDialog = true },
                     onProceedToPhase3 = onProceedToPhase3
                 )
             } else {
@@ -397,6 +397,17 @@ fun PackDetailScreen(
         )
     }
 
+    if (showTikTokImportDialog) {
+        TikTokImportDialog(
+            isAnimatedPack = activePack.isAnimated,
+            onDismiss = { showTikTokImportDialog = false },
+            onImport = { url ->
+                showTikTokImportDialog = false
+                viewModel.addTikTokMediaToActivePack(context, url)
+            }
+        )
+    }
+
     if (showAddAnimatedOptionsDialog) {
         AddAnimatedMediaOptionsDialog(
             onDismiss = { showAddAnimatedOptionsDialog = false },
@@ -407,6 +418,23 @@ fun PackDetailScreen(
             },
             onImportTwitter = {
                 showTwitterImportDialog = true
+            },
+            onImportTikTok = {
+                showTikTokImportDialog = true
+            }
+        )
+    }
+
+    if (showAddStaticOptionsDialog) {
+        AddStaticMediaOptionsDialog(
+            onDismiss = { showAddStaticOptionsDialog = false },
+            onPickGallery = {
+                multiImagePicker.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                )
+            },
+            onImportTikTok = {
+                showTikTokImportDialog = true
             }
         )
     }
@@ -819,6 +847,7 @@ fun EmptyPackView(
     isAnimated: Boolean,
     onSelectImages: () -> Unit,
     onImportTwitter: (() -> Unit)? = null,
+    onImportTikTok: (() -> Unit)? = null,
     onProceedToPhase3: () -> Unit
 ) {
     Column(
@@ -857,7 +886,7 @@ fun EmptyPackView(
 
         Text(
             text = if (isAnimated) {
-                "Selecciona entre 3 y 30 archivos animados (GIF o WebP animado) o importa desde Twitter / X."
+                "Selecciona entre 3 y 30 archivos animados o importa desde Twitter / X o TikTok."
             } else {
                 stringResource(R.string.empty_pack_hint)
             },
@@ -903,6 +932,26 @@ fun EmptyPackView(
             ) {
                 Text(
                     text = "✖️  Importar desde Twitter / X",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    color = Color.White
+                )
+            }
+        }
+
+        if (onImportTikTok != null) {
+            Spacer(modifier = Modifier.height(10.dp))
+            OutlinedButton(
+                onClick = onImportTikTok,
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                border = BorderStroke(1.dp, Color(0x66FFFFFF)),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp)
+            ) {
+                Text(
+                    text = "🎵  Importar desde TikTok",
                     fontWeight = FontWeight.Bold,
                     fontSize = 15.sp,
                     color = Color.White
@@ -1139,7 +1188,8 @@ fun TwitterImportDialog(
 fun AddAnimatedMediaOptionsDialog(
     onDismiss: () -> Unit,
     onPickGallery: () -> Unit,
-    onImportTwitter: () -> Unit
+    onImportTwitter: () -> Unit,
+    onImportTikTok: () -> Unit
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1227,6 +1277,41 @@ fun AddAnimatedMediaOptionsDialog(
                         }
                     }
                 }
+
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = CardDark,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            onDismiss()
+                            onImportTikTok()
+                        }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "🎵",
+                            fontSize = 20.sp
+                        )
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Column {
+                            Text(
+                                text = "Importar desde TikTok",
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimary,
+                                fontSize = 14.sp
+                            )
+                            Text(
+                                text = "Videos o colecciones de fotos con emoji 🎵",
+                                color = TextSecondary,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                }
             }
         },
         confirmButton = {},
@@ -1238,3 +1323,229 @@ fun AddAnimatedMediaOptionsDialog(
         containerColor = SurfaceDark
     )
 }
+
+@Composable
+fun AddStaticMediaOptionsDialog(
+    onDismiss: () -> Unit,
+    onPickGallery: () -> Unit,
+    onImportTikTok: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "Anadir Sticker",
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary,
+                fontSize = 18.sp
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = CardDark,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            onDismiss()
+                            onPickGallery()
+                        }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AddPhotoAlternate,
+                            contentDescription = null,
+                            tint = EmeraldPrimary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Column {
+                            Text(
+                                text = "Elegir fotos de la galeria",
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimary,
+                                fontSize = 14.sp
+                            )
+                            Text(
+                                text = "Selecciona fotos o imagenes (JPG, PNG, WebP)",
+                                color = TextSecondary,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = CardDark,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            onDismiss()
+                            onImportTikTok()
+                        }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "🎵",
+                            fontSize = 20.sp
+                        )
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Column {
+                            Text(
+                                text = "Importar desde TikTok",
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimary,
+                                fontSize = 14.sp
+                            )
+                            Text(
+                                text = "Fotos o portada de video con emoji 🎵",
+                                color = TextSecondary,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = "Cancelar", color = TextSecondary)
+            }
+        },
+        containerColor = SurfaceDark
+    )
+}
+
+@Composable
+fun TikTokImportDialog(
+    isAnimatedPack: Boolean,
+    onDismiss: () -> Unit,
+    onImport: (url: String) -> Unit
+) {
+    val clipboardManager = LocalClipboardManager.current
+    var urlText by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "🎵",
+                    fontSize = 20.sp
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Importar desde TikTok",
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary,
+                    fontSize = 18.sp
+                )
+            }
+        },
+        text = {
+            Column {
+                Text(
+                    text = if (isAnimatedPack) {
+                        "Pega el enlace de un video o coleccion de fotos de TikTok. Los videos se procesaran a stickers animados y en colecciones de fotos se procesara la primera imagen."
+                    } else {
+                        "Pega el enlace de un video o coleccion de fotos de TikTok. En colecciones de fotos se toma la primera imagen y se crea un sticker estatico."
+                    },
+                    fontSize = 13.sp,
+                    color = TextSecondary
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                OutlinedTextField(
+                    value = urlText,
+                    onValueChange = { urlText = it },
+                    label = { Text("URL de TikTok") },
+                    placeholder = { Text("https://vt.tiktok.com/... o tiktok.com/@...") },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        focusedBorderColor = EmeraldPrimary,
+                        unfocusedBorderColor = Color(0x44FFFFFF)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(
+                        onClick = {
+                            val clip = clipboardManager.getText()?.text
+                            if (!clip.isNullOrBlank()) {
+                                urlText = clip.trim()
+                            }
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ContentPaste,
+                            contentDescription = null,
+                            tint = AccentTeal,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Pegar del portapapeles", color = AccentTeal, fontSize = 12.sp)
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = CardDark,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp)
+                ) {
+                    Text(
+                        text = "El sticker se procesara automaticamente con el emoji 🎵 asignado.",
+                        fontSize = 11.sp,
+                        color = TextSecondary,
+                        modifier = Modifier.padding(10.dp)
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (urlText.isNotBlank()) {
+                        onImport(urlText.trim())
+                    }
+                },
+                enabled = urlText.isNotBlank(),
+                colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary)
+            ) {
+                Text(
+                    text = "Descargar y convertir",
+                    color = SurfaceDark,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = "Cancelar", color = TextSecondary)
+            }
+        },
+        containerColor = SurfaceDark
+    )
+}
+

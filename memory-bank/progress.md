@@ -20,6 +20,7 @@
 | Extra | Respaldo e Import/Export | Completado | Empaquetado ZIP con `manifest.json`, seleccion individual o masiva de paquetes, restauracion de datos y proteccion Zip Slip |
 | Extra | Pulido Vista Previa y Muestreo de Video | Completado | Cabecera ultra-compacta (~42dp) con swatches de color, ficha tecnica desplegable con limite dinámico (<500 KB para animados), muestreo adaptativo de video hasta 9.6s sin cortes prematuros |
 | Extra | Filtro No Exportados y Twitter / X | Completado | Filtro "Sin exportar" en pantalla principal, importacion de video/GIF de Twitter/X a sticker animado WebP con emoji ✖️ asignado y buscador de emojis |
+| Extra | Importacion de TikTok (Video y Fotos) | Completado | Soporte directo para URLs de TikTok (videos a WebP animado, fotos a WebP estatico), emoji 🎵 asignado y buscador con palabras clave musicales/tiktok |
 
 ## Criterios de Aceptacion (Progreso)
 - [x] Al exportar, WhatsApp recibe e instala el paquete de stickers a traves del Intent oficial y ContentProvider (Fase 4).
@@ -50,6 +51,9 @@
 - [x] Importacion directa de medios desde Twitter / X (enlaces de tweets y enlaces directos) a stickers animados con conversion automatica a WebP.
 - [x] Sistema de normalizacion automatica de marcas MP4 (`iso5` / `iso6` -> `isom` / `mp42`) y atomos de tablas temporales (`ctts` flags 1 -> 0) para garantizar compatibilidad universal con el parser nativo de Android Stagefright (`SampleTable.cpp`) en GIFs de Twitter / X.
 - [x] Sistema de registro de diagnostico (`DiagnosticLogger`) con cuadro de dialogo emergente interactivo que permite copiar al portapapeles la traza de ejecucion completa ante cualquier fallo al importar desde Twitter / X.
+- [x] Importacion directa de medios desde TikTok (videos y colecciones de fotos) mediante `TikTokMediaResolver` con conversion automatica a stickers compatibles de WhatsApp.
+- [x] Asignacion automatica del emoji `🎵` a stickers de TikTok e integracion en el selector manual y buscador de emojis con palabras clave contextuales.
+- [x] Deteccion de colecciones de fotos de TikTok (como `vt.tiktok.com/.../photo/...`) extrayendo la primera foto para generar un sticker estatico.
 
 ## Problemas Conocidos / Bloqueos
-- Ningun bloqueo activo. 43 pruebas unitarias superadas al 100% y APK de desarrollo (`app-debug.apk`) compilado limpiamente.
+- Ningun bloqueo activo. 48 pruebas unitarias superadas al 100% y APK de desarrollo (`app-debug.apk`) compilado limpiamente.
