@@ -22,6 +22,8 @@
 | Extra | Filtro No Exportados y Twitter / X | Completado | Filtro "Sin exportar" en pantalla principal, importacion de video/GIF de Twitter/X a sticker animado WebP con emoji ✖️ asignado y buscador de emojis |
 | Extra | Importacion de TikTok (Video y Fotos) | Completado | Soporte directo para URLs de TikTok (videos a WebP animado, fotos a WebP estatico), emoji 🎵 asignado y buscador con palabras clave musicales/tiktok |
 | Extra | Fluidez, Duracion Completa y Limite <500 KB | Completado | Decodificacion secuencial por hardware con MediaCodec (sin freeze por GOP) hasta 9.6s a 1.0x, con compresion adaptativa en 6 etapas que garantiza estrictamente <485 KB para aceptacion en WhatsApp |
+| Extra | Importacion Universal (YouTube, Instagram, TikTok, X) | Completado | Boton unico "Importar desde enlace (URL)" en TopAppBar y vistas, deteccion automatica de plataforma, soporte para YouTube (videos y Shorts, limite optimizado de 15 MB para evitar descargas masivas de videos largos), Instagram (Reels y fotos/carruseles tomando la 1era imagen), emojis por defecto (▶️ y 📸) indexados en buscador, aviso explícito del límite de 10s de WhatsApp y 61 tests superados |
+| Extra | Resolucion Robusta Multietapa (YouTube & Instagram) | Completado | Motor Cobalt v10 comunitario via `CobaltInstanceProvider` con sincronizacion dinamica de servidores desde GitHub Raw para YouTube e Instagram, motor SnapSave en Kotlin con desempaquetado de JavaScript y extraccion directa CDN/JWT, fallback fixup `eeinstagram.com` y crawler OpenGraph oficial de Facebook, resolviendo bloqueos de Cloudflare/Invidious |
 
 ## Criterios de Aceptacion (Progreso)
 - [x] Al exportar, WhatsApp recibe e instala el paquete de stickers a traves del Intent oficial y ContentProvider (Fase 4).
@@ -55,6 +57,13 @@
 - [x] Importacion directa de medios desde TikTok (videos y colecciones de fotos) mediante `TikTokMediaResolver` con conversion automatica a stickers compatibles de WhatsApp.
 - [x] Asignacion automatica del emoji `🎵` a stickers de TikTok e integracion en el selector manual y buscador de emojis con palabras clave contextuales.
 - [x] Deteccion de colecciones de fotos de TikTok (como `vt.tiktok.com/.../photo/...`) extrayendo la primera foto para generar un sticker estatico.
+- [x] Consolidacion y documentacion formal del Estandar de Oro de Stickers Animados en `Animated_Sticker_Pipeline_Specification.md`, Memory Bank y `.agyrules.md` para garantizar la misma calidad en futuras funcionalidades.
+- [x] Unificacion de la interfaz de usuario con un solo boton "Importar desde enlace (URL)" en TopAppBar, estados vacios y dialogos de seleccion, erradicando botones individuales por plataforma.
+- [x] Cuadro de dialogo `UrlMediaImportDialog` con deteccion reactiva de plataforma (YouTube, Instagram, TikTok, Twitter / X, Enlace directo), boton de pegado rapido y aviso claro sobre el limite maximo de 10s (9.6s en la app) de WhatsApp.
+- [x] Resolucion e importacion de YouTube (`YouTubeMediaResolver`) para videos estandar y Shorts, con limite de seguridad de descarga de 15 MB y reescritura de cabeceras MP4 (`isom`, `mdat`) para evitar descargar videos largos enteros (de 20 min o varias horas).
+- [x] Resolucion e importacion de Instagram (`InstagramMediaResolver`) para Reels, videos y publicaciones/carruseles de fotos (extrayendo la primera foto para crear un sticker estatico WebP).
+- [x] Asignacion automatica del emoji `▶️` para YouTube y `📸` para Instagram, indexados para busqueda manual en `StickerMetadataDialog`.
+- [x] 61 pruebas unitarias ejecutadas y superadas al 100%.
 
 ## Problemas Conocidos / Bloqueos
-- Ningun bloqueo activo. 48 pruebas unitarias superadas al 100% y APK de desarrollo (`app-debug.apk`) compilado limpiamente.
+- Ningun bloqueo activo. 61 pruebas unitarias superadas al 100% y build de desarrollo validado.

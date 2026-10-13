@@ -17,11 +17,41 @@
 - Asignacion automatica del emoji `🎵` y etiquetado para busqueda en selector manual.
 - Conversion automatica segun tipo de contenido y paquete:
   - URLs de video (ej. `vt.tiktok.com/...` o `tiktok.com/@.../video/...`) convertidas a stickers animados WebP en paquetes animados.
-  - Colecciones de fotos (ej. `vt.tiktok.com/...` o `tiktok.com/@.../photo/...`) procesando la primera imagen como sticker estatico WebP.
-  - Opciones de importacion disponibles en paquetes animados y estaticos mediante botones de accion directa y dialogos dedicados.
-- 48 pruebas unitarias superadas al 100%. Debug APK generado con exito.
+- Resolucion e Importacion Universal de Medios (`UniversalMediaResolver`, `YouTubeMediaResolver`, `InstagramMediaResolver`, `CobaltInstanceProvider`):
+  - Boton unificado "Importar desde enlace (URL)" en TopAppBar, estados vacios y dialogos de adicion de stickers, limpiando la interfaz al eliminar botones individuales por plataforma.
+  - Dialogo `UrlMediaImportDialog` con deteccion reactiva de plataforma (YouTube, Instagram, TikTok, Twitter / X, Enlace directo) con badge y emoji distintivo.
+  - Aviso explicito de limite de duracion de WhatsApp: notifica que los stickers animados tienen un maximo estricto de 10 segundos (9.6s en la app) y que videos mas largos seran recortados y procesados de manera optimizada en sus primeros segundos.
+  - Optimizacion para videos largos (ej. YouTube de 20 min o 6 horas): streaming limitado por cabeceras HTTP Range y tope de 15 MB, evitando descargas masivas y caidas por memoria. Reescritura dinamica de atomos MP4 (`ftyp` a `isom` y recalculacion de tamano del atomo `mdat`) garantizando que `MediaExtractor` y `MediaCodec` lean los primeros segundos limpiamente sin fallos de contenedor.
+  - Motor multietapa de YouTube: integracion con `CobaltInstanceProvider` consultando instancias de Cobalt v10 sin autenticacion obligatoria (`api.cobalt.liubquanti.click`) y sincronizacion dinamica de servidores desde GitHub Raw, superando bloqueos de Cloudflare/Invidious.
+  - Motor multietapa de Instagram:
+    - Tier 1: Decodificador nativo de JavaScript empaquetado para SnapSave (desempaquetado algoritmico en Kotlin y extraccion de enlaces directos CDN / JWT), resolviendo Reels, publicaciones de foto y carruseles.
+    - Tier 2: Cobalt v10 comunitario via `CobaltInstanceProvider`.
+    - Tier 3: Proxy fixup `eeinstagram.com` con seguimiento de redireccion a CDN.
+    - Tier 4: Extraccion directa OpenGraph con user-agent de Facebook Crawler (`facebookexternalhit/1.1`) para fotos y carruseles de alta resolucion a sticker estatico WebP (<100 KB).
+  - Asignacion automatica de emojis: `▶️` para YouTube y `📸` para Instagram, indexados para busqueda manual en `StickerMetadataDialog`.
+- 61 pruebas unitarias superadas al 100%.
 
 ## Cambios Recientes
+- Sistema de Importacion Universal de Medios (`UniversalMediaResolver`):
+  - Creacion de `UniversalMediaResolver` que unifica la deteccion y delegacion a `YouTubeMediaResolver`, `InstagramMediaResolver`, `TikTokMediaResolver` y `TwitterMediaResolver`.
+  - Creacion de `YouTubeMediaResolver`:
+    - Deteccion de formatos de URL: watch (`?v=...`), shorts (`/shorts/...`), enlaces cortos (`youtu.be/...`) y embebidos (`/embed/...`).
+    - Resolucion multietapa con endpoints publicos (Invidious, Piped) y descarga con limite de seguridad estricto (15 MB).
+    - Normalizacion de marcas MP4 (`ftyp`, `ctts`) y reajuste del atomo `mdat` cuando el archivo es truncado deliberadamente, asegurando compatibilidad total con Stagefright/MediaCodec de Android.
+  - Creacion de `InstagramMediaResolver`:
+    - Deteccion y sanitizacion de URLs de Reels (`/reel/...`), publicaciones de video (`/p/...`, `/tv/...`) y fotos/carruseles (removiendo parametros como `?xtok=...`).
+    - Resolucion automatica de medios y discriminacion entre video (`isVideo=true`) y colecciones de fotos (`isPhotoCollection=true`, tomando la 1era imagen).
+  - Unificacion visual en `PackDetailScreen`:
+    - Reemplazo de los botones independientes de Twitter y TikTok en `TopAppBar` por un unico boton con icono `Link`.
+    - Boton unico en `EmptyPackView` y en los dialogos de opciones de stickers.
+    - Cuadro interactivo `UrlMediaImportDialog` con boton de pegado rapido del portapapeles y alerta destacada sobre el limite de 10s de WhatsApp.
+  - Emojis asociados:
+    - YouTube asigna `▶️`.
+    - Instagram asigna `📸`.
+    - Emojis indexados en `StickerMetadataDialog` bajo la seccion "Populares", "Objetos y Simbolos" y diccionario de busqueda manual.
+  - Pruebas Unitarias:
+    - Creacion de `YouTubeMediaResolverTest`, `InstagramMediaResolverTest` y `UniversalMediaResolverTest`.
+    - Total de pruebas unitarias incrementado de 48 a 59 (todas aprobadas al 100%).
 - Importacion Directa desde TikTok (`TikTokMediaResolver`):
   - Creacion de `TikTokMediaResolver` en `com.stickerforge.app.domain`:
     - Deteccion de enlaces de TikTok (`vt.tiktok.com`, `vm.tiktok.com`, `tiktok.com/@usuario/video/...`, `tiktok.com/@usuario/photo/...`, `tiktok.com/t/...`, etc.) y enlaces directos de video o imagen.
@@ -100,6 +130,7 @@
   - 32 pruebas unitarias ejecutadas y superadas al 100%.
 
 ## Decisiones y Consideraciones Activas
+- Estandar de Oro de Stickers Animados: El balance actual entre fluidez visual (MediaCodec + curva adaptativa de FPS + cadencia protegida 60-110 ms) y limite de peso (<485 KB, margen estricto sobre los 500 KB de WhatsApp) ha quedado formalmente consolidado como la referencia mandatoria del proyecto en `Animated_Sticker_Pipeline_Specification.md`. Todas las nuevas fuentes o herramientas de video/animacion deben reutilizar este pipeline.
 - Aislamiento de respaldo vs exportacion a WhatsApp: La exportacion a WhatsApp sigue orientada a su ContentProvider e Intent oficial; el respaldo ZIP es un sistema de respaldo completo, portable y compatible entre instalaciones o usuarios.
 - Seguridad en descompresion: Rechazo estricto de entradas maliciosas con secuencias `..` o rutas absolutas durante la extraccion de archivos comprimidos.
 - Resolucion de conflictos: Si un identificador ya existe localmente, se genera un sufijo aleatorio unico para evitar sobrescribir colecciones existentes del usuario.

@@ -12,11 +12,16 @@ import com.stickerforge.app.domain.DiagnosticLogger
 import com.stickerforge.app.domain.ExportResult
 import com.stickerforge.app.domain.BackupExportResult
 import com.stickerforge.app.domain.BackupImportResult
+import com.stickerforge.app.domain.InstagramMediaResolver
+import com.stickerforge.app.domain.SocialPlatform
 import com.stickerforge.app.domain.StickerPackBackupManager
 import com.stickerforge.app.domain.StickerProcessor
 import com.stickerforge.app.domain.TikTokMediaResolver
 import com.stickerforge.app.domain.TwitterMediaResolver
+import com.stickerforge.app.domain.UniversalMediaResolver
+import com.stickerforge.app.domain.UniversalMediaResult
 import com.stickerforge.app.domain.WhatsAppExporter
+import com.stickerforge.app.domain.YouTubeMediaResolver
 import com.stickerforge.app.model.CropParameters
 import com.stickerforge.app.model.PackStickerItem
 import com.stickerforge.app.model.StickerPack
@@ -371,10 +376,11 @@ class StickerViewModel(
     }
 
     /**
-     * Descarga y anade un video o GIF desde Twitter / X directamente al paquete animado activo.
-     * Asocia por defecto el emoji "✖️" y las palabras clave de busqueda correspondientes.
+     * Descarga y anade un medio desde cualquier enlace admitido (YouTube, Instagram, TikTok, Twitter/X o enlace directo)
+     * al paquete activo, asociando automaticamente el emoji correspondiente de la plataforma (▶️, 📸, 🎵, ✖️, ✨)
+     * y las palabras clave de busqueda correspondientes.
      */
-    fun addTwitterMediaToActivePack(
+    fun addUrlMediaToActivePack(
         context: Context,
         url: String,
         onSuccess: () -> Unit = {},
@@ -390,10 +396,11 @@ class StickerViewModel(
         }
 
         DiagnosticLogger.clear()
+        val detectedPlatform = UniversalMediaResolver.detectPlatform(url)
         _uiState.update {
             it.copy(
                 isProcessing = true,
-                processingProgress = "Descargando medio de Twitter / X...",
+                processingProgress = "Descargando medio de ${detectedPlatform.displayName}...",
                 lastDiagnosticLog = null
             )
         }
@@ -401,131 +408,10 @@ class StickerViewModel(
         viewModelScope.launch {
             try {
                 val mediaResult = withContext(Dispatchers.IO) {
-                    TwitterMediaResolver.resolveAndDownload(context, url)
+                    UniversalMediaResolver.resolveAndDownload(context, url)
                 }
 
-                _uiState.update {
-                    it.copy(processingProgress = "Convirtiendo a sticker animado WebP...")
-                }
-
-                val processed = withContext(Dispatchers.IO) {
-                    val p = StickerProcessor.processImage(
-                        context = context,
-                        sourceUri = Uri.fromFile(mediaResult.file),
-                        cropParameters = CropParameters(),
-                        isAnimated = true
-                    )
-                    try { mediaResult.file.delete() } catch (ignored: Exception) {}
-                    p
-                }
-
-                if (processed != null) {
-                    val defaultName = if (!mediaResult.username.isNullOrBlank()) {
-                        "X @${mediaResult.username}"
-                    } else {
-                        "X Sticker ${currentPack.count + 1}"
-                    }
-                    val defaultAccessibility = if (!mediaResult.username.isNullOrBlank()) {
-                        val textSnippet = mediaResult.tweetText?.take(60) ?: ""
-                        "twitter x @${mediaResult.username} $textSnippet".trim().take(125)
-                    } else {
-                        "twitter x sticker"
-                    }
-
-                    val newItem = PackStickerItem(
-                        sourceUri = processed.uri,
-                        processedSticker = processed,
-                        isAnimated = true,
-                        name = defaultName,
-                        emojis = listOf("✖️"),
-                        accessibilityText = defaultAccessibility
-                    )
-
-                    _uiState.update { state ->
-                        val currentActive = state.activePack
-                        val updatedPack = currentActive.copy(
-                            stickers = currentActive.stickers + newItem
-                        )
-                        val updatedPacks = state.packs.map { p ->
-                            if (p.id == updatedPack.id) updatedPack else p
-                        }
-                        state.copy(
-                            isProcessing = false,
-                            processingProgress = "",
-                            packs = updatedPacks,
-                            lastDiagnosticLog = null
-                        )
-                    }
-                    persistCurrentState()
-                    onSuccess()
-                } else {
-                    val diagLog = DiagnosticLogger.getLog()
-                    android.util.Log.e("StickerViewModel", "Fallo al procesar medio de Twitter: archivo=${mediaResult.file.name}, tamano=${mediaResult.file.length()}")
-                    val msg = "No se pudo procesar el video a formato WebP compatible."
-                    _uiState.update {
-                        it.copy(
-                            isProcessing = false,
-                            processingProgress = "",
-                            errorMessage = msg,
-                            lastDiagnosticLog = diagLog
-                        )
-                    }
-                    onError(msg)
-                }
-            } catch (e: Exception) {
-                val diagLog = DiagnosticLogger.getLog()
-                android.util.Log.e("StickerViewModel", "Error al descargar o procesar medio de Twitter: ${e.message}", e)
-                val msg = e.message ?: "Error al descargar o procesar el video de Twitter / X."
-                _uiState.update {
-                    it.copy(
-                        isProcessing = false,
-                        processingProgress = "",
-                        errorMessage = msg,
-                        lastDiagnosticLog = diagLog
-                    )
-                }
-                onError(msg)
-            }
-        }
-    }
-
-    /**
-     * Descarga y anade un video o foto desde TikTok directamente al paquete activo.
-     * En paquetes animados genera un sticker animado WebP; en paquetes estaticos o fotos genera un sticker estatico.
-     * Asocia por defecto el emoji "🎵" y las palabras clave de busqueda correspondientes.
-     */
-    fun addTikTokMediaToActivePack(
-        context: Context,
-        url: String,
-        onSuccess: () -> Unit = {},
-        onError: (String) -> Unit = {}
-    ) {
-        val currentPack = _uiState.value.activePack
-        val availableSlots = (30 - currentPack.count).coerceAtLeast(0)
-        if (availableSlots <= 0) {
-            val msg = "El paquete ya alcanzo el maximo de 30 stickers permitido por WhatsApp."
-            _uiState.update { it.copy(errorMessage = msg) }
-            onError(msg)
-            return
-        }
-
-        DiagnosticLogger.clear()
-        _uiState.update {
-            it.copy(
-                isProcessing = true,
-                processingProgress = "Descargando medio de TikTok...",
-                lastDiagnosticLog = null
-            )
-        }
-
-        viewModelScope.launch {
-            try {
-                val mediaResult = withContext(Dispatchers.IO) {
-                    TikTokMediaResolver.resolveAndDownload(context, url)
-                }
-
-                val willBeAnimated = currentPack.isAnimated
-
+                val willBeAnimated = mediaResult.isVideo && currentPack.isAnimated
                 _uiState.update {
                     it.copy(
                         processingProgress = if (willBeAnimated)
@@ -547,25 +433,30 @@ class StickerViewModel(
                 }
 
                 if (processed != null) {
-                    val defaultName = if (!mediaResult.username.isNullOrBlank()) {
-                        "TikTok @${mediaResult.username}"
-                    } else {
-                        "TikTok Sticker ${currentPack.count + 1}"
+                    val defaultName = when {
+                        !mediaResult.username.isNullOrBlank() -> "${mediaResult.platform.displayName} @${mediaResult.username}"
+                        !mediaResult.title.isNullOrBlank() -> "${mediaResult.platform.displayName} ${mediaResult.title.take(24)}".trim()
+                        else -> "${mediaResult.platform.displayName} Sticker ${currentPack.count + 1}"
                     }
-                    val defaultAccessibility = if (!mediaResult.username.isNullOrBlank()) {
-                        val snippet = mediaResult.title?.take(60) ?: ""
-                        "tiktok 🎵 @${mediaResult.username} $snippet".trim().take(125)
-                    } else {
-                        val snippet = mediaResult.title?.take(60) ?: ""
-                        "tiktok 🎵 $snippet".trim().take(125)
-                    }
+
+                    val defaultAccessibility = buildString {
+                        append(mediaResult.platform.displayName.lowercase())
+                        append(" ")
+                        append(mediaResult.defaultEmoji)
+                        if (!mediaResult.username.isNullOrBlank()) {
+                            append(" @${mediaResult.username}")
+                        }
+                        if (!mediaResult.title.isNullOrBlank()) {
+                            append(" ${mediaResult.title.take(60)}")
+                        }
+                    }.trim().take(125)
 
                     val newItem = PackStickerItem(
                         sourceUri = processed.uri,
                         processedSticker = processed,
                         isAnimated = willBeAnimated,
                         name = defaultName,
-                        emojis = listOf("🎵"),
+                        emojis = listOf(mediaResult.defaultEmoji),
                         accessibilityText = defaultAccessibility
                     )
 
@@ -588,8 +479,8 @@ class StickerViewModel(
                     onSuccess()
                 } else {
                     val diagLog = DiagnosticLogger.getLog()
-                    android.util.Log.e("StickerViewModel", "Fallo al procesar medio de TikTok: archivo=${mediaResult.file.name}, tamano=${mediaResult.file.length()}")
-                    val msg = "No se pudo procesar el medio a formato WebP compatible."
+                    android.util.Log.e("StickerViewModel", "Fallo al procesar medio de ${mediaResult.platform.displayName}: archivo=${mediaResult.file.name}, tamano=${mediaResult.file.length()}")
+                    val msg = "No se pudo procesar el medio de ${mediaResult.platform.displayName} a formato compatible de WhatsApp."
                     _uiState.update {
                         it.copy(
                             isProcessing = false,
@@ -602,8 +493,8 @@ class StickerViewModel(
                 }
             } catch (e: Exception) {
                 val diagLog = DiagnosticLogger.getLog()
-                android.util.Log.e("StickerViewModel", "Error al descargar o procesar medio de TikTok: ${e.message}", e)
-                val msg = e.message ?: "Error al descargar o procesar el contenido de TikTok."
+                android.util.Log.e("StickerViewModel", "Error al descargar o procesar medio desde enlace: ${e.message}", e)
+                val msg = e.message ?: "Error al descargar o procesar el contenido desde el enlace."
                 _uiState.update {
                     it.copy(
                         isProcessing = false,
@@ -615,6 +506,30 @@ class StickerViewModel(
                 onError(msg)
             }
         }
+    }
+
+    /**
+     * Mantiene retrocompatibilidad delegando en addUrlMediaToActivePack.
+     */
+    fun addTwitterMediaToActivePack(
+        context: Context,
+        url: String,
+        onSuccess: () -> Unit = {},
+        onError: (String) -> Unit = {}
+    ) {
+        addUrlMediaToActivePack(context, url, onSuccess, onError)
+    }
+
+    /**
+     * Mantiene retrocompatibilidad delegando en addUrlMediaToActivePack.
+     */
+    fun addTikTokMediaToActivePack(
+        context: Context,
+        url: String,
+        onSuccess: () -> Unit = {},
+        onError: (String) -> Unit = {}
+    ) {
+        addUrlMediaToActivePack(context, url, onSuccess, onError)
     }
 
     fun clearDiagnosticLog() {

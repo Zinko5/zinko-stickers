@@ -18,13 +18,18 @@
 
 ## Restricciones Tecnicas y de Entorno
 - **Formato de Salida**: Archivos `.webp` empaquetados bajo la estructura de `contents.json` exigida por WhatsApp.
-- **Limites de Tamano**:
-  - Resolucion fija: 512x512 pixeles.
-  - Peso por archivo: Menos de 100 KB por sticker.
+- **Limites de Tamano y Formatos**:
+  - Resolucion fija: 512x512 pixeles con canal alfa transparente.
+  - Peso por archivo estatico: Menos de 100 KB por sticker (margen de 98 KB).
+  - Peso por archivo animado: Menos de 500 KB oficial (margen estricto de seguridad: < 485 KB).
+  - Duracion de stickers animados: Maximo 9.6 segundos (`MAX_WHATSAPP_DURATION_MS = 9600L`).
+  - Cadencia y fluidez de animacion: Entre 60 ms y 110 ms por fotograma (>= 9.1 FPS a 16.6 FPS; nunca degradar a 200-300 ms modo diapositivas). Maximo 70 fotogramas reales (`MAX_STICKER_FRAMES = 70`).
   - Tamano del paquete: Minimo 3 y maximo 30 stickers por paquete.
-  - Icono de bandeja del paquete (Tray icon): 96x96 pixeles, <50 KB.
+  - Icono de bandeja del paquete (Tray icon): 96x96 pixeles PNG con canal alfa, <50 KB.
+  - Ver especificacion completa en `Animated_Sticker_Pipeline_Specification.md`.
 - **Permisos requeridos**:
-  - `READ_MEDIA_IMAGES` para Android 13+ (API 33+).
+  - `INTERNET` para resolucion y descarga de medios desde URLs remotas.
+  - `READ_MEDIA_IMAGES` y `READ_MEDIA_VIDEO` para Android 13+ (API 33+).
   - `READ_EXTERNAL_STORAGE` para versiones anteriores a Android 13.
   - No requiere permisos de almacenamiento para archivos internos de la app.
 

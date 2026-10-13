@@ -33,6 +33,18 @@ object TwitterMediaResolver {
         Pattern.CASE_INSENSITIVE
     )
 
+    fun isTwitterUrl(url: String): Boolean {
+        val trimmed = url.trim()
+        return (trimmed.startsWith("http://", ignoreCase = true) || trimmed.startsWith("https://", ignoreCase = true)) &&
+                (trimmed.contains("twitter.com", ignoreCase = true) ||
+                        trimmed.contains("x.com", ignoreCase = true) ||
+                        trimmed.contains("fxtwitter.com", ignoreCase = true) ||
+                        trimmed.contains("vxtwitter.com", ignoreCase = true) ||
+                        trimmed.contains("fixupx.com", ignoreCase = true))
+    }
+
+    fun isTweetUrl(url: String): Boolean = isTwitterUrl(url)
+
     /**
      * Resuelve y descarga el video o GIF de un tweet o enlace directo a un archivo temporal en cache.
      */
@@ -434,7 +446,7 @@ object TwitterMediaResolver {
                 lower.contains("/tweet_video/")
     }
 
-    private fun isDirectMediaUrl(url: String): Boolean {
+    fun isDirectMediaUrl(url: String): Boolean {
         return isPlayableMediaUrl(url)
     }
 

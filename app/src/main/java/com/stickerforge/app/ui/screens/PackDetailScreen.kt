@@ -101,6 +101,8 @@ import coil.decode.ImageDecoderDecoder
 import coil.request.ImageRequest
 import android.os.Build
 import com.stickerforge.app.R
+import com.stickerforge.app.domain.SocialPlatform
+import com.stickerforge.app.domain.UniversalMediaResolver
 import com.stickerforge.app.model.PackStickerItem
 import com.stickerforge.app.model.StickerPack
 import com.stickerforge.app.ui.components.TransparencyGrid
@@ -132,8 +134,7 @@ fun PackDetailScreen(
 
     var showRenameDialog by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
-    var showTwitterImportDialog by remember { mutableStateOf(false) }
-    var showTikTokImportDialog by remember { mutableStateOf(false) }
+    var showUrlImportDialog by remember { mutableStateOf(false) }
     var showAddAnimatedOptionsDialog by remember { mutableStateOf(false) }
     var showAddStaticOptionsDialog by remember { mutableStateOf(false) }
 
@@ -231,18 +232,11 @@ fun PackDetailScreen(
                     }
                 },
                 actions = {
-                    if (activePack.isAnimated) {
-                        IconButton(onClick = { showTwitterImportDialog = true }) {
-                            Text(
-                                text = "✖️",
-                                fontSize = 18.sp
-                            )
-                        }
-                    }
-                    IconButton(onClick = { showTikTokImportDialog = true }) {
-                        Text(
-                            text = "🎵",
-                            fontSize = 18.sp
+                    IconButton(onClick = { showUrlImportDialog = true }) {
+                        Icon(
+                            imageVector = Icons.Default.Link,
+                            contentDescription = "Importar desde enlace (URL)",
+                            tint = AccentTeal
                         )
                     }
                     IconButton(onClick = { viewModel.navigateTo(CurrentScreen.PREVIEW) }) {
@@ -330,8 +324,7 @@ fun PackDetailScreen(
                 EmptyPackView(
                     isAnimated = activePack.isAnimated,
                     onSelectImages = onAddMediaClick,
-                    onImportTwitter = if (activePack.isAnimated) { { showTwitterImportDialog = true } } else null,
-                    onImportTikTok = { showTikTokImportDialog = true },
+                    onImportUrl = { showUrlImportDialog = true },
                     onProceedToPhase3 = onProceedToPhase3
                 )
             } else {
@@ -387,23 +380,13 @@ fun PackDetailScreen(
         )
     }
 
-    if (showTwitterImportDialog) {
-        TwitterImportDialog(
-            onDismiss = { showTwitterImportDialog = false },
-            onImport = { url ->
-                showTwitterImportDialog = false
-                viewModel.addTwitterMediaToActivePack(context, url)
-            }
-        )
-    }
-
-    if (showTikTokImportDialog) {
-        TikTokImportDialog(
+    if (showUrlImportDialog) {
+        UrlMediaImportDialog(
             isAnimatedPack = activePack.isAnimated,
-            onDismiss = { showTikTokImportDialog = false },
+            onDismiss = { showUrlImportDialog = false },
             onImport = { url ->
-                showTikTokImportDialog = false
-                viewModel.addTikTokMediaToActivePack(context, url)
+                showUrlImportDialog = false
+                viewModel.addUrlMediaToActivePack(context, url)
             }
         )
     }
@@ -416,11 +399,8 @@ fun PackDetailScreen(
                     PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
                 )
             },
-            onImportTwitter = {
-                showTwitterImportDialog = true
-            },
-            onImportTikTok = {
-                showTikTokImportDialog = true
+            onImportUrl = {
+                showUrlImportDialog = true
             }
         )
     }
@@ -433,8 +413,8 @@ fun PackDetailScreen(
                     PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                 )
             },
-            onImportTikTok = {
-                showTikTokImportDialog = true
+            onImportUrl = {
+                showUrlImportDialog = true
             }
         )
     }
@@ -846,10 +826,13 @@ fun AddStickerSlotCard(onClick: () -> Unit) {
 fun EmptyPackView(
     isAnimated: Boolean,
     onSelectImages: () -> Unit,
+    onImportUrl: (() -> Unit)? = null,
     onImportTwitter: (() -> Unit)? = null,
     onImportTikTok: (() -> Unit)? = null,
     onProceedToPhase3: () -> Unit
 ) {
+    val handleImportUrl = onImportUrl ?: onImportTikTok ?: onImportTwitter
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -886,7 +869,7 @@ fun EmptyPackView(
 
         Text(
             text = if (isAnimated) {
-                "Selecciona entre 3 y 30 archivos animados o importa desde Twitter / X o TikTok."
+                "Selecciona entre 3 y 30 archivos animados o importa desde enlace (YouTube, Instagram, TikTok o X)."
             } else {
                 stringResource(R.string.empty_pack_hint)
             },
@@ -919,10 +902,10 @@ fun EmptyPackView(
             )
         }
 
-        if (isAnimated && onImportTwitter != null) {
+        if (handleImportUrl != null) {
             Spacer(modifier = Modifier.height(10.dp))
             OutlinedButton(
-                onClick = onImportTwitter,
+                onClick = handleImportUrl,
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
                 border = BorderStroke(1.dp, Color(0x66FFFFFF)),
                 shape = RoundedCornerShape(12.dp),
@@ -930,28 +913,15 @@ fun EmptyPackView(
                     .fillMaxWidth()
                     .height(50.dp)
             ) {
-                Text(
-                    text = "✖️  Importar desde Twitter / X",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
-                    color = Color.White
+                Icon(
+                    imageVector = Icons.Default.Link,
+                    contentDescription = null,
+                    tint = AccentTeal,
+                    modifier = Modifier.size(20.dp)
                 )
-            }
-        }
-
-        if (onImportTikTok != null) {
-            Spacer(modifier = Modifier.height(10.dp))
-            OutlinedButton(
-                onClick = onImportTikTok,
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                border = BorderStroke(1.dp, Color(0x66FFFFFF)),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(50.dp)
-            ) {
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "🎵  Importar desde TikTok",
+                    text = "Importar desde enlace (URL)",
                     fontWeight = FontWeight.Bold,
                     fontSize = 15.sp,
                     color = Color.White
@@ -1069,24 +1039,30 @@ fun EditPackDetailsDialog(
 }
 
 @Composable
-fun TwitterImportDialog(
+fun UrlMediaImportDialog(
+    isAnimatedPack: Boolean,
     onDismiss: () -> Unit,
     onImport: (url: String) -> Unit
 ) {
     val clipboardManager = LocalClipboardManager.current
     var urlText by remember { mutableStateOf("") }
+    val detectedPlatform = remember(urlText) {
+        UniversalMediaResolver.detectPlatform(urlText.trim())
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = "✖️",
-                    fontSize = 20.sp
+                Icon(
+                    imageVector = Icons.Default.Link,
+                    contentDescription = null,
+                    tint = AccentTeal,
+                    modifier = Modifier.size(24.dp)
                 )
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(10.dp))
                 Text(
-                    text = "Importar desde Twitter / X",
+                    text = "Importar desde enlace",
                     fontWeight = FontWeight.Bold,
                     color = TextPrimary,
                     fontSize = 18.sp
@@ -1094,19 +1070,53 @@ fun TwitterImportDialog(
             }
         },
         text = {
-            Column {
+            Column(modifier = Modifier.fillMaxWidth()) {
                 Text(
-                    text = "Pega el enlace de un tweet que contenga un video o GIF, o un enlace directo de video.",
+                    text = "Pega un enlace de YouTube, Instagram, TikTok, Twitter / X o un archivo directo.",
                     fontSize = 13.sp,
                     color = TextSecondary
                 )
-                Spacer(modifier = Modifier.height(12.dp))
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // WhatsApp 10s duration warning card
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color(0x22F59E0B),
+                    border = BorderStroke(1.dp, Color(0x55F59E0B)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(10.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Text(text = "⏱️", fontSize = 15.sp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text(
+                                text = "Limite de duracion de WhatsApp (10 s)",
+                                fontWeight = FontWeight.Bold,
+                                color = WarningAmber,
+                                fontSize = 11.sp
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "WhatsApp solo permite stickers animados de hasta 10 segundos (max. 9.6s en la app). Si el video dura mas (incluso horas), solo se descargaran y procesaran sus primeros segundos de forma optimizada.",
+                                fontSize = 10.sp,
+                                color = TextSecondary,
+                                lineHeight = 14.sp
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
 
                 OutlinedTextField(
                     value = urlText,
                     onValueChange = { urlText = it },
-                    label = { Text("URL de Twitter / X") },
-                    placeholder = { Text("https://x.com/usuario/status/...") },
+                    label = { Text("URL de la publicacion o video") },
+                    placeholder = { Text("https://youtube.com/..., instagram.com/..., etc.") },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = TextPrimary,
@@ -1117,7 +1127,7 @@ fun TwitterImportDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(4.dp))
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1142,19 +1152,36 @@ fun TwitterImportDialog(
                     }
                 }
 
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = CardDark,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 4.dp)
-                ) {
-                    Text(
-                        text = "El sticker se procesara a WebP animado de WhatsApp con el emoji ✖️ asignado automaticamente.",
-                        fontSize = 11.sp,
-                        color = TextSecondary,
-                        modifier = Modifier.padding(10.dp)
-                    )
+                if (urlText.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = CardDark,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        val (label, badgeEmoji) = when (detectedPlatform) {
+                            SocialPlatform.YOUTUBE -> "Detectado: YouTube (Video o Short) con emoji ▶️" to "▶️"
+                            SocialPlatform.INSTAGRAM -> "Detectado: Instagram (Reel, Video o Foto) con emoji 📸" to "📸"
+                            SocialPlatform.TIKTOK -> "Detectado: TikTok (Video o Fotos) con emoji 🎵" to "🎵"
+                            SocialPlatform.TWITTER -> "Detectado: Twitter / X con emoji ✖️" to "✖️"
+                            SocialPlatform.DIRECT_LINK -> "Detectado: Enlace directo a archivo con emoji ✨" to "✨"
+                            SocialPlatform.UNKNOWN -> "Formato no especifico de red social (se intentara descarga directa)" to "🔗"
+                        }
+
+                        Row(
+                            modifier = Modifier.padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(text = badgeEmoji, fontSize = 16.sp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = label,
+                                fontSize = 11.sp,
+                                color = TextPrimary,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
                 }
             }
         },
@@ -1188,9 +1215,12 @@ fun TwitterImportDialog(
 fun AddAnimatedMediaOptionsDialog(
     onDismiss: () -> Unit,
     onPickGallery: () -> Unit,
-    onImportTwitter: () -> Unit,
-    onImportTikTok: () -> Unit
+    onImportUrl: () -> Unit,
+    onImportTwitter: (() -> Unit)? = null,
+    onImportTikTok: (() -> Unit)? = null
 ) {
+    val handleImportUrl = onImportUrl
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
@@ -1250,62 +1280,29 @@ fun AddAnimatedMediaOptionsDialog(
                         .fillMaxWidth()
                         .clickable {
                             onDismiss()
-                            onImportTwitter()
+                            handleImportUrl()
                         }
                 ) {
                     Row(
                         modifier = Modifier.padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = "✖️",
-                            fontSize = 20.sp
+                        Icon(
+                            imageVector = Icons.Default.Link,
+                            contentDescription = null,
+                            tint = AccentTeal,
+                            modifier = Modifier.size(24.dp)
                         )
                         Spacer(modifier = Modifier.width(14.dp))
                         Column {
                             Text(
-                                text = "Importar desde Twitter / X",
+                                text = "Importar desde enlace (URL)",
                                 fontWeight = FontWeight.Bold,
                                 color = TextPrimary,
                                 fontSize = 14.sp
                             )
                             Text(
-                                text = "Pega un enlace y se convierte automaticamente",
-                                color = TextSecondary,
-                                fontSize = 12.sp
-                            )
-                        }
-                    }
-                }
-
-                Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = CardDark,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            onDismiss()
-                            onImportTikTok()
-                        }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "🎵",
-                            fontSize = 20.sp
-                        )
-                        Spacer(modifier = Modifier.width(14.dp))
-                        Column {
-                            Text(
-                                text = "Importar desde TikTok",
-                                fontWeight = FontWeight.Bold,
-                                color = TextPrimary,
-                                fontSize = 14.sp
-                            )
-                            Text(
-                                text = "Videos o colecciones de fotos con emoji 🎵",
+                                text = "YouTube, Instagram, TikTok, Twitter / X o enlace directo",
                                 color = TextSecondary,
                                 fontSize = 12.sp
                             )
@@ -1328,8 +1325,11 @@ fun AddAnimatedMediaOptionsDialog(
 fun AddStaticMediaOptionsDialog(
     onDismiss: () -> Unit,
     onPickGallery: () -> Unit,
-    onImportTikTok: () -> Unit
+    onImportUrl: () -> Unit,
+    onImportTikTok: (() -> Unit)? = null
 ) {
+    val handleImportUrl = onImportUrl
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
@@ -1389,27 +1389,29 @@ fun AddStaticMediaOptionsDialog(
                         .fillMaxWidth()
                         .clickable {
                             onDismiss()
-                            onImportTikTok()
+                            handleImportUrl()
                         }
                 ) {
                     Row(
                         modifier = Modifier.padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = "🎵",
-                            fontSize = 20.sp
+                        Icon(
+                            imageVector = Icons.Default.Link,
+                            contentDescription = null,
+                            tint = AccentTeal,
+                            modifier = Modifier.size(24.dp)
                         )
                         Spacer(modifier = Modifier.width(14.dp))
                         Column {
                             Text(
-                                text = "Importar desde TikTok",
+                                text = "Importar desde enlace (URL)",
                                 fontWeight = FontWeight.Bold,
                                 color = TextPrimary,
                                 fontSize = 14.sp
                             )
                             Text(
-                                text = "Fotos o portada de video con emoji 🎵",
+                                text = "Instagram, TikTok, YouTube, Twitter / X o enlace directo",
                                 color = TextSecondary,
                                 fontSize = 12.sp
                             )
@@ -1429,123 +1431,27 @@ fun AddStaticMediaOptionsDialog(
 }
 
 @Composable
+fun TwitterImportDialog(
+    onDismiss: () -> Unit,
+    onImport: (url: String) -> Unit
+) {
+    UrlMediaImportDialog(
+        isAnimatedPack = true,
+        onDismiss = onDismiss,
+        onImport = onImport
+    )
+}
+
+@Composable
 fun TikTokImportDialog(
     isAnimatedPack: Boolean,
     onDismiss: () -> Unit,
     onImport: (url: String) -> Unit
 ) {
-    val clipboardManager = LocalClipboardManager.current
-    var urlText by remember { mutableStateOf("") }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = "🎵",
-                    fontSize = 20.sp
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "Importar desde TikTok",
-                    fontWeight = FontWeight.Bold,
-                    color = TextPrimary,
-                    fontSize = 18.sp
-                )
-            }
-        },
-        text = {
-            Column {
-                Text(
-                    text = if (isAnimatedPack) {
-                        "Pega el enlace de un video o coleccion de fotos de TikTok. Los videos se procesaran a stickers animados y en colecciones de fotos se procesara la primera imagen."
-                    } else {
-                        "Pega el enlace de un video o coleccion de fotos de TikTok. En colecciones de fotos se toma la primera imagen y se crea un sticker estatico."
-                    },
-                    fontSize = 13.sp,
-                    color = TextSecondary
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-
-                OutlinedTextField(
-                    value = urlText,
-                    onValueChange = { urlText = it },
-                    label = { Text("URL de TikTok") },
-                    placeholder = { Text("https://vt.tiktok.com/... o tiktok.com/@...") },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary,
-                        focusedBorderColor = EmeraldPrimary,
-                        unfocusedBorderColor = Color(0x44FFFFFF)
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    TextButton(
-                        onClick = {
-                            val clip = clipboardManager.getText()?.text
-                            if (!clip.isNullOrBlank()) {
-                                urlText = clip.trim()
-                            }
-                        }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.ContentPaste,
-                            contentDescription = null,
-                            tint = AccentTeal,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Pegar del portapapeles", color = AccentTeal, fontSize = 12.sp)
-                    }
-                }
-
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = CardDark,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 4.dp)
-                ) {
-                    Text(
-                        text = "El sticker se procesara automaticamente con el emoji 🎵 asignado.",
-                        fontSize = 11.sp,
-                        color = TextSecondary,
-                        modifier = Modifier.padding(10.dp)
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    if (urlText.isNotBlank()) {
-                        onImport(urlText.trim())
-                    }
-                },
-                enabled = urlText.isNotBlank(),
-                colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary)
-            ) {
-                Text(
-                    text = "Descargar y convertir",
-                    color = SurfaceDark,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(text = "Cancelar", color = TextSecondary)
-            }
-        },
-        containerColor = SurfaceDark
+    UrlMediaImportDialog(
+        isAnimatedPack = isAnimatedPack,
+        onDismiss = onDismiss,
+        onImport = onImport
     )
 }
 
