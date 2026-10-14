@@ -112,6 +112,7 @@ object StickerPackBackupManager {
                 packObj.put("license_agreement_website", pack.licenseAgreementWebsite)
                 packObj.put("is_animated", pack.isAnimated)
                 packObj.put("is_exported_to_whatsapp", pack.isExportedToWhatsApp)
+                packObj.put("image_data_version", pack.imageDataVersion)
 
                 // Tray icon relativo dentro del ZIP
                 var trayRelativePath = ""
@@ -365,6 +366,7 @@ object StickerPackBackupManager {
                 }
 
                 val isExported = packObj.optBoolean("is_exported_to_whatsapp", false)
+                val imageDataVersion = packObj.optString("image_data_version", "1")
 
                 importedPacks.add(
                     StickerPack(
@@ -378,6 +380,7 @@ object StickerPackBackupManager {
                         licenseAgreementWebsite = licenseAgreement,
                         isAnimated = isAnimated,
                         isExportedToWhatsApp = isExported,
+                        imageDataVersion = imageDataVersion,
                         trayImageFile = importedTrayFile,
                         stickers = importedStickersList
                     )

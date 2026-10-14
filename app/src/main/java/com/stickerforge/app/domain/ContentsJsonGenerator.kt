@@ -21,6 +21,8 @@ object ContentsJsonGenerator {
         sb.append("      \"publisher\": \"${escapeJson(pack.publisher)}\",\n")
         val trayName = pack.trayImageFile?.name ?: "tray_${pack.identifier}.png"
         sb.append("      \"tray_image_file\": \"${escapeJson(trayName)}\",\n")
+        sb.append("      \"image_data_version\": \"${escapeJson(pack.imageDataVersion)}\",\n")
+        sb.append("      \"avoid_cache\": false,\n")
         sb.append("      \"publisher_email\": \"${escapeJson(pack.publisherEmail)}\",\n")
         sb.append("      \"publisher_website\": \"${escapeJson(pack.publisherWebsite)}\",\n")
         sb.append("      \"privacy_policy_website\": \"${escapeJson(pack.privacyPolicyWebsite)}\",\n")

@@ -73,6 +73,19 @@ object StickerPackStorage {
 
         val updatedPack = pack.copy(trayImageFile = destTrayFile)
         registerInMemory(updatedPack)
+        try {
+            val authority = "${context.packageName}.stickercontentprovider"
+            context.contentResolver.notifyChange(
+                Uri.parse("content://$authority/${StickerContentProviderConstants.METADATA}"),
+                null
+            )
+            context.contentResolver.notifyChange(
+                Uri.parse("content://$authority/${StickerContentProviderConstants.STICKERS}/${pack.identifier}"),
+                null
+            )
+        } catch (e: Exception) {
+            // Ignorar excepciones al notificar ContentResolver
+        }
         return packDir
     }
 
@@ -147,6 +160,7 @@ object StickerPackStorage {
             val publisherWebsite = packObj.optString("publisher_website", "")
             val privacyPolicy = packObj.optString("privacy_policy_website", "")
             val licenseAgreement = packObj.optString("license_agreement_website", "")
+            val imageDataVersion = packObj.optString("image_data_version", "1")
 
             val stickersArray = packObj.optJSONArray("stickers") ?: JSONArray()
             val stickersList = mutableListOf<PackStickerItem>()
@@ -191,6 +205,7 @@ object StickerPackStorage {
                 publisherWebsite = publisherWebsite,
                 privacyPolicyWebsite = privacyPolicy,
                 licenseAgreementWebsite = licenseAgreement,
+                imageDataVersion = imageDataVersion,
                 stickers = stickersList
             )
         } catch (e: Exception) {

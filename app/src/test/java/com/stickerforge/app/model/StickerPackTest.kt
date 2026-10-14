@@ -74,4 +74,17 @@ class StickerPackTest {
         assertEquals("Animado", animatedPack.typeLabel)
         assertEquals("Zinko Stickers", animatedPack.publisher)
     }
+
+    @Test
+    fun testImageDataVersionIncrement() {
+        val pack = StickerPack(imageDataVersion = "1")
+        assertEquals("1", pack.imageDataVersion)
+        assertEquals("2", pack.nextImageDataVersion())
+
+        val packV9 = StickerPack(imageDataVersion = "9")
+        assertEquals("10", packV9.nextImageDataVersion())
+
+        val packInvalid = StickerPack(imageDataVersion = "abc")
+        assertEquals("2", packInvalid.nextImageDataVersion())
+    }
 }

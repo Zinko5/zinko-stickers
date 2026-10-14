@@ -173,7 +173,7 @@ class StickerContentProvider : ContentProvider() {
                 pack.publisherWebsite,
                 pack.privacyPolicyWebsite,
                 pack.licenseAgreementWebsite,
-                "1", // image_data_version
+                pack.imageDataVersion, // image_data_version
                 0, // avoid_cache
                 if (pack.isAnimated) 1 else 0 // animated_sticker_pack
             )

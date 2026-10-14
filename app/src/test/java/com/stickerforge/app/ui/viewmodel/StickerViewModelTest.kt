@@ -100,4 +100,23 @@ class StickerViewModelTest {
         assertEquals("Pack Renombrado", updatedPack.name)
         assertEquals("Nuevo Artista", updatedPack.publisher)
     }
+
+    @Test
+    fun testUpdateDialogVisibilityControls() {
+        assertFalse(viewModel.uiState.value.isUpdateDialogVisible)
+        viewModel.showUpdateDialog()
+        // Como availableUpdate es null inicialmente, isUpdateDialogVisible sigue false
+        assertFalse(viewModel.uiState.value.isUpdateDialogVisible)
+
+        viewModel.dismissUpdateDialog()
+        assertFalse(viewModel.uiState.value.isUpdateDialogVisible)
+    }
+
+    @Test
+    fun testDismissUpdateMessages() {
+        viewModel.dismissUpdateStatusMessage()
+        val state = viewModel.uiState.value
+        assertEquals(null, state.updateStatusMessage)
+        assertEquals(null, state.updateErrorMessage)
+    }
 }

@@ -27,6 +27,10 @@ import com.stickerforge.app.model.PackStickerItem
 import com.stickerforge.app.model.StickerPack
 import com.stickerforge.app.provider.StickerPackStorage
 import com.stickerforge.app.util.ImageUtils
+import com.stickerforge.app.BuildConfig
+import com.stickerforge.app.data.AppUpdatePreferences
+import com.stickerforge.app.domain.AppUpdateInfo
+import com.stickerforge.app.domain.AppUpdateManager
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -72,7 +76,16 @@ data class StickerUiState(
     val exportErrorMessage: String? = null,
     val backupSuccessMessage: String? = null,
     val backupErrorMessage: String? = null,
-    val lastDiagnosticLog: String? = null
+    val lastDiagnosticLog: String? = null,
+    val availableUpdate: AppUpdateInfo? = null,
+    val isUpdateChecking: Boolean = false,
+    val isUpdateDialogVisible: Boolean = false,
+    val updateDownloadProgress: Float = 0f,
+    val isDownloadingUpdate: Boolean = false,
+    val readyToInstallApk: File? = null,
+    val updateErrorMessage: String? = null,
+    val updateStatusMessage: String? = null,
+    val isUpdateIgnored: Boolean = false
 ) {
     val activePack: StickerPack
         get() = packs.firstOrNull { it.id == activePackId } ?: packs.firstOrNull() ?: StickerPack()
@@ -118,6 +131,7 @@ class StickerViewModel(
         val repo = StickerPackRepository(context.applicationContext)
         this.repository = repo
         loadSavedData(repo)
+        checkForAppUpdate(context.applicationContext, isManualCheck = false)
     }
 
     fun setRepository(repo: StickerPackRepository) {
@@ -235,7 +249,8 @@ class StickerViewModel(
                 if (pack.id == packId) {
                     pack.copy(
                         name = trimmedName.ifEmpty { pack.name },
-                        publisher = trimmedPublisher
+                        publisher = trimmedPublisher,
+                        imageDataVersion = pack.nextImageDataVersion()
                     )
                 } else pack
             }
@@ -361,7 +376,8 @@ class StickerViewModel(
             _uiState.update { state ->
                 val currentActive = state.activePack
                 val updatedPack = currentActive.copy(
-                    stickers = currentActive.stickers + processedItems
+                    stickers = currentActive.stickers + processedItems,
+                    imageDataVersion = currentActive.nextImageDataVersion()
                 )
                 val updatedPacks = state.packs.map { p ->
                     if (p.id == updatedPack.id) updatedPack else p
@@ -463,7 +479,8 @@ class StickerViewModel(
                     _uiState.update { state ->
                         val currentActive = state.activePack
                         val updatedPack = currentActive.copy(
-                            stickers = currentActive.stickers + newItem
+                            stickers = currentActive.stickers + newItem,
+                            imageDataVersion = currentActive.nextImageDataVersion()
                         )
                         val updatedPacks = state.packs.map { p ->
                             if (p.id == updatedPack.id) updatedPack else p
@@ -579,7 +596,10 @@ class StickerViewModel(
                             item
                         }
                     }
-                    val updatedPack = activePack.copy(stickers = updatedStickers)
+                    val updatedPack = activePack.copy(
+                        stickers = updatedStickers,
+                        imageDataVersion = activePack.nextImageDataVersion()
+                    )
                     val updatedPacks = state.packs.map { p ->
                         if (p.id == updatedPack.id) updatedPack else p
                     }
@@ -615,7 +635,8 @@ class StickerViewModel(
         _uiState.update { state ->
             val activePack = state.activePack
             val updatedPack = activePack.copy(
-                stickers = activePack.stickers.filterNot { it.id == stickerId }
+                stickers = activePack.stickers.filterNot { it.id == stickerId },
+                imageDataVersion = activePack.nextImageDataVersion()
             )
             val updatedPacks = state.packs.map { p ->
                 if (p.id == updatedPack.id) updatedPack else p
@@ -654,7 +675,10 @@ class StickerViewModel(
                     )
                 } else item
             }
-            val updatedPack = activePack.copy(stickers = updatedStickers)
+            val updatedPack = activePack.copy(
+                stickers = updatedStickers,
+                imageDataVersion = activePack.nextImageDataVersion()
+            )
             val updatedPacks = state.packs.map { p ->
                 if (p.id == updatedPack.id) updatedPack else p
             }
@@ -677,7 +701,10 @@ class StickerViewModel(
         )
         return if (trayFile != null) {
             _uiState.update { state ->
-                val updatedPack = state.activePack.copy(trayImageFile = trayFile)
+                val updatedPack = state.activePack.copy(
+                    trayImageFile = trayFile,
+                    imageDataVersion = state.activePack.nextImageDataVersion()
+                )
                 val updatedPacks = state.packs.map { p ->
                     if (p.id == updatedPack.id) updatedPack else p
                 }
@@ -713,7 +740,10 @@ class StickerViewModel(
         )
         return if (trayFile != null) {
             _uiState.update { state ->
-                val updatedPack = state.activePack.copy(trayImageFile = trayFile)
+                val updatedPack = state.activePack.copy(
+                    trayImageFile = trayFile,
+                    imageDataVersion = state.activePack.nextImageDataVersion()
+                )
                 val updatedPacks = state.packs.map { p ->
                     if (p.id == updatedPack.id) updatedPack else p
                 }
@@ -739,7 +769,10 @@ class StickerViewModel(
                     )
                 } else item
             }
-            val updatedPack = activePack.copy(stickers = updatedStickers)
+            val updatedPack = activePack.copy(
+                stickers = updatedStickers,
+                imageDataVersion = activePack.nextImageDataVersion()
+            )
             val updatedPacks = state.packs.map { p ->
                 if (p.id == updatedPack.id) updatedPack else p
             }
@@ -806,6 +839,11 @@ class StickerViewModel(
             }
         }
 
+        // Si el paquete ya fue exportado previamente, incrementamos la version para que WhatsApp detecte la actualizacion
+        if (pack.isExportedToWhatsApp) {
+            pack = pack.copy(imageDataVersion = pack.nextImageDataVersion())
+        }
+
         // Actualizar el estado con el paquete listo
         val finalPack = pack
         _uiState.update { state ->
@@ -836,13 +874,19 @@ class StickerViewModel(
         when (result) {
             is ExportResult.Success -> {
                 val packIdToMark = exportedPackId ?: _uiState.value.activePackId
+                val wasPreviouslyExported = _uiState.value.packs.firstOrNull { it.id == packIdToMark }?.isExportedToWhatsApp == true
+                val successMessage = if (wasPreviouslyExported) {
+                    "Paquete actualizado en WhatsApp con exito."
+                } else {
+                    "Paquete anadido a WhatsApp con exito."
+                }
                 _uiState.update { state ->
                     val updatedPacks = state.packs.map { p ->
                         if (p.id == packIdToMark) p.copy(isExportedToWhatsApp = true) else p
                     }
                     state.copy(
                         packs = updatedPacks,
-                        exportSuccessMessage = "Paquete anadido a WhatsApp con exito.",
+                        exportSuccessMessage = successMessage,
                         exportErrorMessage = null
                     )
                 }
@@ -978,5 +1022,130 @@ class StickerViewModel(
 
     fun dismissWarning() {
         _uiState.update { it.copy(warningMessage = null) }
+    }
+
+    fun checkForAppUpdate(context: Context, isManualCheck: Boolean = false) {
+        if (_uiState.value.isUpdateChecking || _uiState.value.isDownloadingUpdate) return
+
+        _uiState.update { it.copy(isUpdateChecking = true, updateErrorMessage = null) }
+
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                AppUpdateManager.checkLatestRelease(BuildConfig.VERSION_NAME)
+            }
+
+            result.onSuccess { updateInfo ->
+                if (updateInfo != null) {
+                    val prefs = AppUpdatePreferences(context.applicationContext)
+                    val ignoredTag = prefs.getIgnoredVersion()
+                    val isIgnored = (ignoredTag == updateInfo.versionTag)
+
+                    _uiState.update { state ->
+                        state.copy(
+                            isUpdateChecking = false,
+                            availableUpdate = updateInfo,
+                            isUpdateIgnored = isIgnored,
+                            isUpdateDialogVisible = isManualCheck || !isIgnored,
+                            updateStatusMessage = if (isManualCheck) null else state.updateStatusMessage
+                        )
+                    }
+                } else {
+                    _uiState.update { state ->
+                        state.copy(
+                            isUpdateChecking = false,
+                            availableUpdate = null,
+                            updateStatusMessage = if (isManualCheck) {
+                                "Ya tienes la version mas reciente (v${BuildConfig.VERSION_NAME})"
+                            } else null
+                        )
+                    }
+                }
+            }.onFailure { error ->
+                _uiState.update { state ->
+                    state.copy(
+                        isUpdateChecking = false,
+                        updateErrorMessage = if (isManualCheck) {
+                            "No se pudo comprobar actualizaciones: ${error.message}"
+                        } else null
+                    )
+                }
+            }
+        }
+    }
+
+    fun showUpdateDialog() {
+        if (_uiState.value.availableUpdate != null) {
+            _uiState.update { it.copy(isUpdateDialogVisible = true) }
+        }
+    }
+
+    fun dismissUpdateDialog() {
+        _uiState.update { it.copy(isUpdateDialogVisible = false) }
+    }
+
+    fun ignoreCurrentUpdate(context: Context) {
+        val currentUpdate = _uiState.value.availableUpdate ?: return
+        AppUpdatePreferences(context.applicationContext).setIgnoredVersion(currentUpdate.versionTag)
+        _uiState.update { it.copy(isUpdateIgnored = true, isUpdateDialogVisible = false) }
+    }
+
+    fun startUpdateDownload(context: Context) {
+        val update = _uiState.value.availableUpdate ?: return
+        if (_uiState.value.isDownloadingUpdate) return
+
+        _uiState.update {
+            it.copy(
+                isDownloadingUpdate = true,
+                updateDownloadProgress = 0f,
+                updateErrorMessage = null,
+                readyToInstallApk = null
+            )
+        }
+
+        viewModelScope.launch {
+            val destinationFile = File(context.cacheDir, "updates/update.apk")
+            val downloadResult = withContext(Dispatchers.IO) {
+                AppUpdateManager.downloadApk(
+                    downloadUrl = update.downloadUrl,
+                    destinationFile = destinationFile
+                ) { progress, _, _ ->
+                    _uiState.update { it.copy(updateDownloadProgress = progress) }
+                }
+            }
+
+            downloadResult.onSuccess { apkFile ->
+                _uiState.update {
+                    it.copy(
+                        isDownloadingUpdate = false,
+                        updateDownloadProgress = 1f,
+                        readyToInstallApk = apkFile
+                    )
+                }
+                installApk(context, apkFile)
+            }.onFailure { error ->
+                _uiState.update {
+                    it.copy(
+                        isDownloadingUpdate = false,
+                        updateErrorMessage = "Error al descargar actualizacion: ${error.message}"
+                    )
+                }
+            }
+        }
+    }
+
+    fun installApk(context: Context, file: File? = null) {
+        val apkFile = file ?: _uiState.value.readyToInstallApk ?: return
+        try {
+            val intent = AppUpdateManager.createInstallIntent(context, apkFile)
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            _uiState.update {
+                it.copy(updateErrorMessage = "Error al iniciar instalador: ${e.message}")
+            }
+        }
+    }
+
+    fun dismissUpdateStatusMessage() {
+        _uiState.update { it.copy(updateStatusMessage = null, updateErrorMessage = null) }
     }
 }

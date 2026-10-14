@@ -68,6 +68,7 @@ class ContentsJsonGeneratorTest {
         assertTrue("Debe contener name", json.contains("\"name\": \"Pack Oficial\""))
         assertTrue("Debe contener publisher", json.contains("\"publisher\": \"Zinko Stickers\""))
         assertTrue("Debe contener tray_image_file", json.contains("\"tray_image_file\": \"tray_zinko_pack_test.png\""))
+        assertTrue("Debe contener image_data_version", json.contains("\"image_data_version\": \"1\""))
 
         // Verificaciones de stickers y metadatos
         assertTrue("Debe incluir sticker_1", json.contains("\"image_file\": \"sticker_1.webp\""))

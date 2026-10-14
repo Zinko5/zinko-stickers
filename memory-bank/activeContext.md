@@ -1,5 +1,25 @@
 # Active Context: Zinko Stickers
 
+- Flujo de Actualizacion de Paquetes en WhatsApp (`image_data_version` dinamico):
+  - WhatsApp exige que la columna `IMAGE_DATA_VERSION` del cursor de `StickerContentProvider` y la propiedad `image_data_version` en `contents.json` se incrementen con un entero mayor a la version instalada para desplegar el dialogo nativo de actualizacion de paquete ("Updating this pack may add, remove or reorder stickers. [Update] [Remove]") sin requerir borrar el paquete manualmente de WhatsApp.
+  - Implementado `imageDataVersion` en `StickerPack` con logica de incremento secuencial (`nextImageDataVersion()`).
+  - Auto-incremento automatico al modificar un paquete: anadir imagenes, recortar/editar stickers, importar medios por URL, eliminar stickers, editar metadatos/emojis o re-exportar un paquete ya marcado como instalado.
+  - Sincronizacion y notificacion inmediata a WhatsApp via `ContentResolver.notifyChange` al exportar/actualizar.
+  - Actualizacion de interfaz con textos contextuales: "Actualizar en WhatsApp" (en tarjetas, dialogos y pantallas de metadatos) y mensaje de exito "Paquete actualizado en WhatsApp con exito."
+- Correccion de Superposicion del Boton Flotante (+ Crear Paquete) en Pantalla Principal:
+  - En `PackListScreen`, `contentPadding` en `LazyVerticalGrid` ajustado a `PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 96.dp)` (y tambien en `PackDetailScreen` para la cuadricula de stickers).
+  - Al hacer scroll al final de la lista de paquetes, las ultimas tarjetas se desplazan holgadamente por encima del `ExtendedFloatingActionButton`, permitiendo pulsar los botones de exportar a WhatsApp, eliminar y leer el estado "Instalado" / "Listo" sin ninguna obstruccion.
+- Sistema de Actualizaciones In-App desde GitHub Releases (`AppUpdateManager`, `AppUpdateDialog`, `AppUpdatePreferences`):
+  - Consulta automática en segundo plano y manual a la API de GitHub Releases (`https://api.github.com/repos/Zinko5/zinko-stickers/releases/latest`).
+  - Comparador semántico de versiones estricto (`isNewerVersion`) entre la versión instalada (`BuildConfig.VERSION_NAME`) y el tag de la release (`tag_name`).
+  - Detección del asset `app-release.apk` con extracción de peso en MB, notas de la versión (changelog) y enlace de descarga.
+  - Diálogo moderno `AppUpdateDialog` con comparación visual de versiones (instalada -> nueva), notas de la release con scroll, barra de progreso lineal de descarga y botones de acción.
+  - Opción "No volver a mostrar esta versión" con persistencia en `SharedPreferences` (`AppUpdatePreferences`): evita interrupciones al inicio si el usuario decide ignorar una versión concreta.
+  - Acceso sutil en `PackListScreen`:
+    - Indicador de punto verde en el botón de opciones (`MoreVert`) de la TopAppBar cuando hay una actualización disponible.
+    - Opción destacada "Actualizar app (vX.X.X)" en el menú desplegable, permitiendo actualizar en cualquier momento incluso si se había seleccionado "No volver a mostrar".
+    - Opción "Buscar actualizaciones" para comprobación manual bajo demanda.
+  - Descarga segura por HTTPS en caché interna (`updates/update.apk`) con soporte de redirecciones hacia la CDN de GitHub / AWS S3 y lanzamiento directo del instalador nativo de Android (`Intent.ACTION_VIEW` con `FileProvider` y `REQUEST_INSTALL_PACKAGES`).
 - Preservacion de Duracion Completa (hasta 9.6s) y Maxima Cadencia de FPS a Velocidad 1.0x (Twitter y TikTok):
   - Solucion unificada: Se erradico cualquier recorte prematuro arbitrario a 3.5s. Los videos conservan el 100% de su duracion original (hasta 9.6 segundos, techo maximo estricto de WhatsApp).
   - Decodificacion secuencial por hardware como via primaria con `MediaCodec` para videos de TikTok y Twitter: resuelve definitivamente los GOPs extremos (de 2 keyframes en 9s) decodificando cuadros intermedios P y B sin congelamientos ni fotogramas duplicados.

@@ -14,9 +14,15 @@ data class StickerPack(
     val licenseAgreementWebsite: String = "",
     val isAnimated: Boolean = false,
     val isExportedToWhatsApp: Boolean = false,
+    val imageDataVersion: String = "1",
     val trayImageFile: File? = null,
     val stickers: List<PackStickerItem> = emptyList()
 ) {
+    fun nextImageDataVersion(): String {
+        val current = imageDataVersion.toIntOrNull() ?: 1
+        return (current + 1).toString()
+    }
+
     val count: Int
         get() = stickers.size
 

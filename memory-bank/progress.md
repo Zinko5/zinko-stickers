@@ -24,8 +24,19 @@
 | Extra | Fluidez, Duracion Completa y Limite <500 KB | Completado | Decodificacion secuencial por hardware con MediaCodec (sin freeze por GOP) hasta 9.6s a 1.0x, con compresion adaptativa en 6 etapas que garantiza estrictamente <485 KB para aceptacion en WhatsApp |
 | Extra | Importacion Universal (YouTube, Instagram, TikTok, X) | Completado | Boton unico "Importar desde enlace (URL)" en TopAppBar y vistas, deteccion automatica de plataforma, soporte para YouTube (buffer seguro de 10 MB con reintento 8 MB/5 MB adaptado a Google CDN), Twitter/X, TikTok e Instagram (50 MB), duracion completa garantizada (hasta 9.6s sin recortes arbitrarios a 3s), emojis por defecto (▶️ y 📸) indexados en buscador, aviso explicito del limite de 10s de WhatsApp y 62 tests superados |
 | Extra | Resolucion Robusta Multietapa (YouTube & Instagram) | Completado | Motor nativo YouTube Innertube iOS Player API como via directa a `googlevideo.com` (sin login, sin ciphers, sin intermediarios), Cobalt v10 comunitario via `CobaltInstanceProvider` con sincronizacion dinamica de servidores desde GitHub Raw, motor SnapSave en Kotlin con desempaquetado de JavaScript y extraccion directa CDN/JWT, fallback fixup `eeinstagram.com` y crawler OpenGraph oficial de Facebook, resolviendo bloqueos de Cloudflare e Invidious |
+| Extra | Actualizaciones In-App (GitHub Releases) | Completado | Consulta de releases a GitHub, comparador de versiones semanticas, descarga segura HTTPS de APK con progreso, instalador nativo Android, persistencia de "no volver a mostrar" y acceso sutil en menu de opciones |
+| Extra | Flujo de Actualizacion de Paquetes en WhatsApp | Completado | Soporte para image_data_version dinamico e incremental en contents.json y StickerContentProvider, permitiendo que WhatsApp muestre la opcion nativa de Update sin requerir borrar el paquete |
+| Extra | Correccion de Superposicion FAB (+ Crear Paquete) | Completado | Ajuste de contentPadding en LazyVerticalGrid con bottom = 96.dp en PackListScreen y PackDetailScreen, eliminando superposicion sobre las ultimas tarjetas |
 
 ## Criterios de Aceptacion (Progreso)
+- [x] WhatsApp reconoce automaticamente los cambios en un pack ya instalado y muestra el dialogo de "Update" gracias al versionado secuencial de image_data_version.
+- [x] Al modificar stickers, metadatos o al pulsar el boton de exportar en un paquete ya instalado, image_data_version se incrementa y notifica al ContentResolver.
+- [x] Las ultimas tarjetas de la pantalla principal no son cubiertas ni obstruidas por el boton flotante (+ Crear Paquete) al llegar al final del scroll.
+- [x] Consulta automatica y manual de actualizaciones in-app contra la API de GitHub Releases.
+- [x] Comparacion de version semantica contra la version instalada (`BuildConfig.VERSION_NAME`).
+- [x] Dialogo informativo con notas de version (changelog), peso del APK, botones de actualizar ahora, mas tarde y no volver a mostrar.
+- [x] Opcion de "No volver a mostrar" persistida para evitar molestias, manteniendo acceso sutil en el menu de opciones.
+- [x] Descarga de APK con indicador de progreso y lanzamiento del instalador de paquetes de Android.
 - [x] Al exportar, WhatsApp recibe e instala el paquete de stickers a traves del Intent oficial y ContentProvider (Fase 4).
 - [x] Cada sticker estatico generado tiene dimensiones exactas de 512x512 pixeles y pesa menos de 100 KB.
 - [x] Cada sticker animado generado es un archivo Animated WebP estricto de 512x512 pixeles y pesa menos de 500 KB (loop=0).

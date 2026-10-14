@@ -46,8 +46,12 @@ import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material.icons.filled.Update
 import androidx.compose.material.icons.filled.Warning
+import com.stickerforge.app.BuildConfig
 import com.stickerforge.app.domain.WhatsAppExporter
+import com.stickerforge.app.ui.components.AppUpdateDialog
 import android.widget.Toast
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -192,6 +196,20 @@ fun PackListScreen(
         }
     }
 
+    LaunchedEffect(uiState.updateStatusMessage) {
+        uiState.updateStatusMessage?.let { msg ->
+            snackbarHostState.showSnackbar(msg)
+            viewModel.dismissUpdateStatusMessage()
+        }
+    }
+
+    LaunchedEffect(uiState.updateErrorMessage) {
+        uiState.updateErrorMessage?.let { msg ->
+            snackbarHostState.showSnackbar(msg)
+            viewModel.dismissUpdateStatusMessage()
+        }
+    }
+
     Scaffold(
         modifier = modifier.fillMaxSize(),
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -286,8 +304,19 @@ fun PackListScreen(
                             IconButton(onClick = { showOptionsMenu = true }) {
                                 Icon(
                                     imageVector = Icons.Default.MoreVert,
-                                    contentDescription = "Opciones de respaldo",
+                                    contentDescription = "Opciones y ajustes",
                                     tint = TextPrimary
+                                )
+                            }
+
+                            if (uiState.availableUpdate != null) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .align(Alignment.TopEnd)
+                                        .padding(top = 2.dp, end = 2.dp)
+                                        .clip(CircleShape)
+                                        .background(EmeraldLight)
                                 )
                             }
 
@@ -296,6 +325,42 @@ fun PackListScreen(
                                 onDismissRequest = { showOptionsMenu = false },
                                 modifier = Modifier.background(CardDark)
                             ) {
+                                if (uiState.availableUpdate != null) {
+                                    DropdownMenuItem(
+                                        text = {
+                                            Column {
+                                                Text(
+                                                    text = "Actualizar app (${uiState.availableUpdate?.versionTag})",
+                                                    color = EmeraldLight,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 13.sp
+                                                )
+                                                Text(
+                                                    text = "Nueva version disponible",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = TextSecondary
+                                                )
+                                            }
+                                        },
+                                        leadingIcon = {
+                                            Icon(
+                                                imageVector = Icons.Default.SystemUpdate,
+                                                contentDescription = null,
+                                                tint = EmeraldLight
+                                            )
+                                        },
+                                        onClick = {
+                                            showOptionsMenu = false
+                                            viewModel.showUpdateDialog()
+                                        }
+                                    )
+
+                                    HorizontalDivider(
+                                        color = Color(0x22FFFFFF),
+                                        modifier = Modifier.padding(vertical = 4.dp)
+                                    )
+                                }
+
                                 DropdownMenuItem(
                                     text = { Text("Exportar Respaldo (.zip)", color = TextPrimary) },
                                     leadingIcon = {
@@ -331,6 +396,26 @@ fun PackListScreen(
                                                 "*/*"
                                             )
                                         )
+                                    }
+                                )
+
+                                HorizontalDivider(
+                                    color = Color(0x22FFFFFF),
+                                    modifier = Modifier.padding(vertical = 4.dp)
+                                )
+
+                                DropdownMenuItem(
+                                    text = { Text("Buscar actualizaciones", color = TextPrimary) },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Default.Update,
+                                            contentDescription = null,
+                                            tint = AccentTeal
+                                        )
+                                    },
+                                    onClick = {
+                                        showOptionsMenu = false
+                                        viewModel.checkForAppUpdate(context, isManualCheck = true)
                                     }
                                 )
                             }
@@ -410,7 +495,7 @@ fun PackListScreen(
             } else {
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(minSize = 160.dp),
-                    contentPadding = PaddingValues(16.dp),
+                    contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 96.dp),
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                     modifier = Modifier.fillMaxSize()
@@ -464,7 +549,7 @@ fun PackListScreen(
             onDismissRequest = { packForExportSelection = null },
             title = {
                 Text(
-                    text = "Exportar a WhatsApp",
+                    text = if (pack.isExportedToWhatsApp) "Actualizar en WhatsApp" else "Exportar a WhatsApp",
                     fontWeight = FontWeight.Bold,
                     color = TextPrimary,
                     fontSize = 17.sp
@@ -473,7 +558,10 @@ fun PackListScreen(
             text = {
                 Column {
                     Text(
-                        text = "Selecciona en cual aplicacion de WhatsApp deseas anadir \"${pack.name}\":",
+                        text = if (pack.isExportedToWhatsApp)
+                            "Selecciona en cual aplicacion de WhatsApp deseas actualizar \"${pack.name}\":"
+                        else
+                            "Selecciona en cual aplicacion de WhatsApp deseas anadir \"${pack.name}\":",
                         color = TextSecondary,
                         fontSize = 13.sp
                     )
@@ -556,6 +644,21 @@ fun PackListScreen(
                 showExportBackupDialog = false
                 createZipLauncher.launch("zinko_stickers_backup_${System.currentTimeMillis()}.zip")
             }
+        )
+    }
+
+    if (uiState.isUpdateDialogVisible && uiState.availableUpdate != null) {
+        AppUpdateDialog(
+            updateInfo = uiState.availableUpdate!!,
+            currentVersionName = BuildConfig.VERSION_NAME,
+            isDownloading = uiState.isDownloadingUpdate,
+            downloadProgress = uiState.updateDownloadProgress,
+            readyToInstall = uiState.readyToInstallApk != null,
+            errorMessage = uiState.updateErrorMessage,
+            onUpdate = { viewModel.startUpdateDownload(context) },
+            onInstall = { viewModel.installApk(context) },
+            onDismiss = { viewModel.dismissUpdateDialog() },
+            onIgnoreThisVersion = { viewModel.ignoreCurrentUpdate(context) }
         )
     }
 }
@@ -853,7 +956,7 @@ fun PackCardItem(
                         ) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.Send,
-                                contentDescription = "Exportar a WhatsApp",
+                                contentDescription = if (pack.isExportedToWhatsApp) "Actualizar en WhatsApp" else "Exportar a WhatsApp",
                                 tint = if (pack.canExport) EmeraldLight else TextSecondary.copy(alpha = 0.4f),
                                 modifier = Modifier.size(16.dp)
                             )

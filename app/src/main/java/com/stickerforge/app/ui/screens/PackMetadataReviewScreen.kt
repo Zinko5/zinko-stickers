@@ -516,7 +516,11 @@ fun PackMetadataReviewScreen(
                             shape = RoundedCornerShape(4.dp)
                         ) {
                             Text(
-                                text = if (activePack.isReadyForWhatsAppExport) "Listo para exportar" else "Requisitos pendientes",
+                                text = when {
+                                    activePack.isExportedToWhatsApp -> "Instalado (Listo para actualizar)"
+                                    activePack.isReadyForWhatsAppExport -> "Listo para exportar"
+                                    else -> "Requisitos pendientes"
+                                },
                                 fontSize = 10.sp,
                                 color = if (activePack.isReadyForWhatsAppExport) EmeraldLight else WarningAmber,
                                 fontWeight = FontWeight.SemiBold,
@@ -621,7 +625,7 @@ fun PackMetadataReviewScreen(
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = "Anadir a ${pkg.title}",
+                                    text = if (activePack.isExportedToWhatsApp) "Actualizar en ${pkg.title}" else "Anadir a ${pkg.title}",
                                     color = SurfaceDark,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -652,7 +656,7 @@ fun PackMetadataReviewScreen(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Exportar a WhatsApp",
+                                text = if (activePack.isExportedToWhatsApp) "Actualizar en WhatsApp" else "Exportar a WhatsApp",
                                 color = SurfaceDark,
                                 fontWeight = FontWeight.Bold
                             )
