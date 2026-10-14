@@ -165,9 +165,25 @@ fun CropScreen(
                         },
                     contentAlignment = Alignment.Center
                 ) {
+                    val modelData = if (stickerItem.isAnimated) {
+                        val sourceFile = try {
+                            if (stickerItem.sourceUri.scheme == "file" && stickerItem.sourceUri.path != null) {
+                                java.io.File(stickerItem.sourceUri.path!!)
+                            } else null
+                        } catch (e: Exception) { null }
+
+                        if (sourceFile != null && sourceFile.exists()) {
+                            sourceFile
+                        } else {
+                            stickerItem.processedSticker.file
+                        }
+                    } else {
+                        stickerItem.sourceUri
+                    }
+
                     AsyncImage(
                         model = ImageRequest.Builder(context)
-                            .data(if (stickerItem.isAnimated) stickerItem.processedSticker.file else stickerItem.sourceUri)
+                            .data(modelData)
                             .decoderFactory(
                                 if (Build.VERSION.SDK_INT >= 28) {
                                     ImageDecoderDecoder.Factory()

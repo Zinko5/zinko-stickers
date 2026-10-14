@@ -27,8 +27,15 @@
 | Extra | Actualizaciones In-App (GitHub Releases) | Completado | Consulta de releases a GitHub, comparador de versiones semanticas, descarga segura HTTPS de APK con progreso, instalador nativo Android, persistencia de "no volver a mostrar" y acceso sutil en menu de opciones |
 | Extra | Flujo de Actualizacion de Paquetes en WhatsApp | Completado | Soporte para image_data_version dinamico e incremental en contents.json y StickerContentProvider, permitiendo que WhatsApp muestre la opcion nativa de Update sin requerir borrar el paquete |
 | Extra | Correccion de Superposicion FAB (+ Crear Paquete) | Completado | Ajuste de contentPadding en LazyVerticalGrid con bottom = 96.dp en PackListScreen y PackDetailScreen, eliminando superposicion sobre las ultimas tarjetas |
+| Extra | Recorte y Rotacion No Destructiva para Stickers Animados | Completado | Decodificador nativo de WebP Animado en AnimatedWebpEncoder con preservacion de baseFile, permitiendo recortar y rotar stickers animados preservando 100% el movimiento |
+| Extra | Descarga Resiliente de YouTube (Paso Progresivo y Multietapa) | Completado | Escalado progresivo de cabecera Range (10 MB -> 8 MB -> 5 MB -> 2 MB -> 1 MB -> 800 KB -> streaming regular) y bucle de reintento/fallback (Innertube candidatos -> Cobalt v10 -> Invidious), erradicando el error HTTP 403 en videos largos de YouTube |
 
 ## Criterios de Aceptacion (Progreso)
+- [x] Al importar videos largos o con tasas de bits variables de YouTube, el descargador adapta el buffer progresivamente hasta 800 KB evitando HTTP 403 de la CDN de Google.
+- [x] Si un stream de Innertube falla al descargar, se prueban los demas candidatos MP4 y se activa el fallback a Cobalt v10 e Invidious en bucle sin abortar prematuramente.
+- [x] Al recortar o rotar un sticker animado, el resultado final conserva el 100% de su animacion y movimiento.
+- [x] El decodificador nativo de WebP animado extrae fotogramas, composicion y tiempos de cualquier sticker animado WebP.
+- [x] Las transformaciones de recorte y rotacion son no destructivas y reutilizan la animacion base sin doble rotacion.
 - [x] WhatsApp reconoce automaticamente los cambios en un pack ya instalado y muestra el dialogo de "Update" gracias al versionado secuencial de image_data_version.
 - [x] Al modificar stickers, metadatos o al pulsar el boton de exportar en un paquete ya instalado, image_data_version se incrementa y notifica al ContentResolver.
 - [x] Las ultimas tarjetas de la pantalla principal no son cubiertas ni obstruidas por el boton flotante (+ Crear Paquete) al llegar al final del scroll.

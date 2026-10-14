@@ -361,9 +361,15 @@ class StickerViewModel(
                         isAnimated = isAnim
                     )
                     if (processed != null) {
+                        val baseFile = if (isAnim) {
+                            val bf = File(context.filesDir, "stickers/base_${processed.file.name}")
+                            try { processed.file.copyTo(bf, overwrite = true) } catch (ignored: Exception) {}
+                            bf
+                        } else null
+
                         processedItems.add(
                             PackStickerItem(
-                                sourceUri = uri,
+                                sourceUri = if (baseFile != null && baseFile.exists()) Uri.fromFile(baseFile) else uri,
                                 processedSticker = processed,
                                 cropParams = defaultCrop,
                                 isAnimated = isAnim
@@ -467,8 +473,14 @@ class StickerViewModel(
                         }
                     }.trim().take(125)
 
+                    val baseFile = if (willBeAnimated) {
+                        val bf = File(context.filesDir, "stickers/base_${processed.file.name}")
+                        try { processed.file.copyTo(bf, overwrite = true) } catch (ignored: Exception) {}
+                        bf
+                    } else null
+
                     val newItem = PackStickerItem(
-                        sourceUri = processed.uri,
+                        sourceUri = if (baseFile != null && baseFile.exists()) Uri.fromFile(baseFile) else processed.uri,
                         processedSticker = processed,
                         isAnimated = willBeAnimated,
                         name = defaultName,
@@ -574,10 +586,48 @@ class StickerViewModel(
         _uiState.update { it.copy(isProcessing = true, errorMessage = null) }
 
         viewModelScope.launch {
+            val stickersDir = File(context.filesDir, "stickers").apply { if (!exists()) mkdirs() }
+
+            val sourceUriToUse = if (currentSticker.isAnimated) {
+                val sourceFile = try {
+                    if (currentSticker.sourceUri.scheme == "file" && currentSticker.sourceUri.path != null) {
+                        File(currentSticker.sourceUri.path!!)
+                    } else null
+                } catch (e: Exception) { null }
+
+                if (sourceFile != null && sourceFile.exists()) {
+                    currentSticker.sourceUri
+                } else {
+                    val canOpen = try {
+                        context.contentResolver.openInputStream(currentSticker.sourceUri)?.use { true } ?: false
+                    } catch (e: Exception) { false }
+
+                    if (canOpen) {
+                        currentSticker.sourceUri
+                    } else {
+                        val baseFile = File(stickersDir, "base_${currentSticker.processedSticker.file.name}")
+                        if (!baseFile.exists() && currentSticker.processedSticker.file.exists()) {
+                            try {
+                                currentSticker.processedSticker.file.copyTo(baseFile, overwrite = true)
+                            } catch (ignored: Exception) {}
+                        }
+                        if (baseFile.exists()) {
+                            Uri.fromFile(baseFile)
+                        } else if (currentSticker.processedSticker.file.exists()) {
+                            Uri.fromFile(currentSticker.processedSticker.file)
+                        } else {
+                            currentSticker.sourceUri
+                        }
+                    }
+                }
+            } else {
+                currentSticker.sourceUri
+            }
+
             val reprocessed = withContext(Dispatchers.IO) {
                 StickerProcessor.processImage(
                     context = context,
-                    sourceUri = currentSticker.sourceUri,
+                    sourceUri = sourceUriToUse,
                     cropParameters = newCropParameters,
                     isAnimated = currentSticker.isAnimated
                 )
@@ -589,6 +639,7 @@ class StickerViewModel(
                     val updatedStickers = activePack.stickers.map { item ->
                         if (item.id == currentSticker.id) {
                             item.copy(
+                                sourceUri = sourceUriToUse,
                                 processedSticker = reprocessed,
                                 cropParams = newCropParameters
                             )

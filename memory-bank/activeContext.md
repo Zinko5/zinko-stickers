@@ -1,5 +1,32 @@
 # Active Context: Zinko Stickers
 
+- Lanzamiento de Version 1.2.0 (`versionCode 3`, `versionName 1.2.0`):
+  - Actualizado `build.gradle.kts` incrementando `versionCode` a 3 y `versionName` a `"1.2.0"` para sincronizar exactamente con el tag de release `v1.2.0`.
+  - El APK compilado en `app/build/outputs/apk/release/app-release.apk` contiene el nuevo `versionName` y `versionCode`.
+  - El sistema de actualizaciones in-app (`AppUpdateManager`) identificara `v1.2.0` como estrictamente superior a `1.1.0` y permitira que dispositivos en versiones anteriores se actualicen limpiamente.
+
+- Descarga Resiliente de YouTube con Reduccion Progresiva de Rango y Bucle Multietapa (`YouTubeMediaResolver`):
+  - Problema corregido: Al importar videos largos o con tasas de bits variables desde YouTube (ej. videos de 27 min o conferencias como `MveLoNf7d8s`), la CDN de Google (`googlevideo.com`) respondia con `HTTP 403 Forbidden` cuando el encabezado `Range` solicitaba buffers mayores a la ventana inicial permitida por la CDN (10 MB, 8 MB o 5 MB). Ademas, el paso de descarga se ejecutaba fuera del pipeline de fallback, por lo que un 403 en Innertube abortaba el proceso sin probar los demas candidatos de Innertube ni activar el fallback a Cobalt v10 ni a Invidious.
+  - Implementada reduccion progresiva de rango en `downloadVideoWithSafetyLimit`:
+    - Secuencia escalonada: 10 MB -> 8 MB -> 5 MB -> 2 MB -> 1 MB -> 800 KB -> streaming regular sin cabecera Range.
+    - 800 KB contiene entre 30 y 60 segundos de video a la tasa de bits estandar de YouTube, suficiente para cubrir holgadamente el tope de 9.6 segundos requerido por WhatsApp.
+  - Pipeline integrado de resolucion y descarga en bucle:
+    - Tier 1: Extrae todos los candidatos MP4 directos de Innertube iOS (`resolveViaInnertubeIosCandidates`: muxed formats, luego adaptativos H.264 `avc1` en orden 720p, 480p, 360p, 1080p, y otros codecs) e intenta la descarga de cada uno.
+    - Tier 2: Si todos los candidatos de Innertube fallan al descargar, se activa automaticamente el fallback a Cobalt v10 (`CobaltInstanceProvider.resolveMedia`) descargando el stream directo o por tunel.
+    - Tier 3: Si Cobalt falla, se recorren las instancias publicas de Invidious (`formatStreams` y `adaptiveFormats`).
+  - Pruebas unitarias de las estructuras de datos de Innertube incorporadas en `YouTubeMediaResolverTest`.
+
+- Recorte y Rotacion No Destructiva para Stickers Animados (`AnimatedWebpEncoder` & `StickerProcessor`):
+  - Problema corregido: Al recortar o rotar un sticker animado, `AnimatedWebpEncoder.extractFramesWithTiming` no soportaba decodificar archivos WebP animados, fallando al extraer fotogramas. `StickerProcessor.processImage` se degradaba silenciosamente a `loadSampledBitmap`, convirtiendo el sticker en una imagen estatica de un solo fotograma. Ademas, para medios importados por URL el video original se habia eliminado y no habia fuente animada disponible.
+  - Implementado decodificador nativo de WebP Animado en `AnimatedWebpEncoder` (`extractFramesFromAnimatedWebp` y `decodeWebpFrameSubchunks`):
+    - Parsea chunks RIFF / VP8X / ANMF.
+    - Reconstruye subchunks de cada fotograma (ALPH, VP8, VP8L) en un WebP valido decodificable por `BitmapFactory`.
+    - Compone fotogramas en lienzo con soporte de metodos de mezcla y descarte (blend y dispose).
+    - Extrae la duracion y cadencia de cada fotograma.
+  - Persistencia no destructiva de animacion base (`base_sticker_xxx.webp`):
+    - Al crear un sticker animado (galeria o URL), se preserva una copia base sin recortar.
+    - `CropScreen` y `saveEditedCrop` operan sobre esta base animada, de modo que rotaciones y recortes sucesivos son siempre idempotentes y conservan el 100% de la animacion sin doble transformacion ni degradacion de calidad.
+  - En `StickerProcessor.processImage`, se elimino la degradacion silenciosa a mapa de bits estatico cuando `isAnimated == true`.
 - Flujo de Actualizacion de Paquetes en WhatsApp (`image_data_version` dinamico):
   - WhatsApp exige que la columna `IMAGE_DATA_VERSION` del cursor de `StickerContentProvider` y la propiedad `image_data_version` en `contents.json` se incrementen con un entero mayor a la version instalada para desplegar el dialogo nativo de actualizacion de paquete ("Updating this pack may add, remove or reorder stickers. [Update] [Remove]") sin requerir borrar el paquete manualmente de WhatsApp.
   - Implementado `imageDataVersion` en `StickerPack` con logica de incremento secuencial (`nextImageDataVersion()`).

@@ -7,6 +7,8 @@ import android.graphics.Canvas
 import android.graphics.ImageFormat
 import android.graphics.Matrix
 import android.graphics.Paint
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffXfermode
 import android.graphics.Rect
 import android.graphics.YuvImage
 import android.media.Image
@@ -218,6 +220,29 @@ object AnimatedWebpEncoder {
         val localFile = if (uri.scheme == "file" && uri.path != null) {
             java.io.File(uri.path!!)
         } else null
+
+        // 0. Detectar si el contenido es un archivo WebP animado (e.g. al recortar, rotar o editar stickers animados)
+        val webpBytes = try {
+            if (localFile != null && localFile.exists()) {
+                localFile.readBytes()
+            } else {
+                context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            }
+        } catch (e: Exception) { null }
+
+        if (webpBytes != null && webpBytes.size >= 12) {
+            val isRiffWebp = webpBytes[0] == 'R'.code.toByte() && webpBytes[1] == 'I'.code.toByte() &&
+                    webpBytes[2] == 'F'.code.toByte() && webpBytes[3] == 'F'.code.toByte() &&
+                    webpBytes[8] == 'W'.code.toByte() && webpBytes[9] == 'E'.code.toByte() &&
+                    webpBytes[10] == 'B'.code.toByte() && webpBytes[11] == 'P'.code.toByte()
+            if (isRiffWebp) {
+                val animatedWebpResult = extractFramesFromAnimatedWebp(webpBytes)
+                if (animatedWebpResult != null && animatedWebpResult.frames.isNotEmpty()) {
+                    DiagnosticLogger.log("WebpEncoder", "extractFramesWithTiming decodifico exitosamente ${animatedWebpResult.frames.size} cuadros desde Animated WebP a ${animatedWebpResult.frameDurationMs}ms/frame")
+                    return animatedWebpResult
+                }
+            }
+        }
 
         if (localFile != null && localFile.exists()) {
             TwitterMediaResolver.normalizeMp4Brands(localFile)
@@ -632,6 +657,244 @@ object AnimatedWebpEncoder {
         stream.write((value shr 8) and 0xFF)
         stream.write((value shr 16) and 0xFF)
         stream.write((value shr 24) and 0xFF)
+    }
+
+    private fun readUInt24LE(bytes: ByteArray, offset: Int): Int {
+        if (offset + 3 > bytes.size) return 0
+        return (bytes[offset].toInt() and 0xFF) or
+                ((bytes[offset + 1].toInt() and 0xFF) shl 8) or
+                ((bytes[offset + 2].toInt() and 0xFF) shl 16)
+    }
+
+    private fun readUInt32LE(bytes: ByteArray, offset: Int): Int {
+        if (offset + 4 > bytes.size) return 0
+        return (bytes[offset].toInt() and 0xFF) or
+                ((bytes[offset + 1].toInt() and 0xFF) shl 8) or
+                ((bytes[offset + 2].toInt() and 0xFF) shl 16) or
+                ((bytes[offset + 3].toInt() and 0xFF) shl 24)
+    }
+
+    /**
+     * Extrae todos los fotogramas y la cadencia de tiempo de un archivo WebP animado (chunks RIFF / VP8X / ANMF).
+     * Reconstruye de forma transparente cada cuadro compuesto con sus metodos de mezcla y descarte.
+     */
+    fun extractFramesFromAnimatedWebp(bytes: ByteArray): AnimationFrames? {
+        if (bytes.size < 12) return null
+
+        val isRiffWebp = bytes[0] == 'R'.code.toByte() && bytes[1] == 'I'.code.toByte() &&
+                bytes[2] == 'F'.code.toByte() && bytes[3] == 'F'.code.toByte() &&
+                bytes[8] == 'W'.code.toByte() && bytes[9] == 'E'.code.toByte() &&
+                bytes[10] == 'B'.code.toByte() && bytes[11] == 'P'.code.toByte()
+        if (!isRiffWebp) return null
+
+        var offset = 12
+        var canvasWidth = TARGET_SIZE_PX
+        var canvasHeight = TARGET_SIZE_PX
+        var isAnimated = false
+
+        while (offset + 8 <= bytes.size) {
+            val fourCC = String(bytes, offset, 4, Charsets.US_ASCII)
+            val chunkSize = readUInt32LE(bytes, offset + 4)
+            val paddedSize = 8 + chunkSize + (if (chunkSize % 2 != 0) 1 else 0)
+
+            if (offset + 8 + chunkSize > bytes.size) break
+            val dataOffset = offset + 8
+
+            if (fourCC == "VP8X" && chunkSize >= 10) {
+                val flags = bytes[dataOffset].toInt() and 0xFF
+                if ((flags and 0x02) != 0) {
+                    isAnimated = true
+                }
+                canvasWidth = 1 + readUInt24LE(bytes, dataOffset + 4)
+                canvasHeight = 1 + readUInt24LE(bytes, dataOffset + 7)
+            } else if (fourCC == "ANMF") {
+                isAnimated = true
+            }
+
+            offset += paddedSize
+        }
+
+        if (!isAnimated) return null
+
+        val frames = mutableListOf<Bitmap>()
+        val durations = mutableListOf<Int>()
+
+        offset = 12
+        var canvasBitmap: Bitmap? = null
+        var canvas: Canvas? = null
+
+        while (offset + 8 <= bytes.size) {
+            val fourCC = String(bytes, offset, 4, Charsets.US_ASCII)
+            val chunkSize = readUInt32LE(bytes, offset + 4)
+            val paddedSize = 8 + chunkSize + (if (chunkSize % 2 != 0) 1 else 0)
+
+            if (offset + 8 + chunkSize > bytes.size) break
+            val dataOffset = offset + 8
+
+            if (fourCC == "ANMF" && chunkSize >= 16) {
+                val frameX = readUInt24LE(bytes, dataOffset)
+                val frameY = readUInt24LE(bytes, dataOffset + 3)
+                val frameW = (1 + readUInt24LE(bytes, dataOffset + 6)).coerceAtLeast(1)
+                val frameH = (1 + readUInt24LE(bytes, dataOffset + 9)).coerceAtLeast(1)
+                val durationMs = readUInt24LE(bytes, dataOffset + 12).coerceAtLeast(10)
+                val flags = bytes[dataOffset + 15].toInt() and 0xFF
+
+                val subchunksOffset = dataOffset + 16
+                val subchunksSize = chunkSize - 16
+
+                if (subchunksSize > 0 && subchunksOffset + subchunksSize <= bytes.size) {
+                    val decodedFrame = decodeWebpFrameSubchunks(
+                        bytes = bytes,
+                        subchunksOffset = subchunksOffset,
+                        subchunksSize = subchunksSize,
+                        frameW = frameW,
+                        frameH = frameH
+                    )
+
+                    if (decodedFrame != null) {
+                        if (canvasBitmap == null) {
+                            canvasBitmap = Bitmap.createBitmap(canvasWidth, canvasHeight, Bitmap.Config.ARGB_8888)
+                            canvas = Canvas(canvasBitmap)
+                        }
+
+                        val blendMethod = (flags and 0x02) shr 1
+                        val disposeMethod = (flags and 0x04) shr 2
+
+                        if (blendMethod == 1 && canvas != null) {
+                            val clearPaint = Paint().apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.CLEAR) }
+                            canvas.drawRect(
+                                frameX.toFloat(),
+                                frameY.toFloat(),
+                                (frameX + frameW).toFloat(),
+                                (frameY + frameH).toFloat(),
+                                clearPaint
+                            )
+                        }
+
+                        canvas?.drawBitmap(decodedFrame, frameX.toFloat(), frameY.toFloat(), null)
+                        decodedFrame.recycle()
+
+                        val composedFrame = canvasBitmap.copy(Bitmap.Config.ARGB_8888, true)
+                        frames.add(composedFrame)
+                        durations.add(durationMs)
+
+                        if (disposeMethod == 1 && canvas != null) {
+                            val clearPaint = Paint().apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.CLEAR) }
+                            canvas.drawRect(
+                                frameX.toFloat(),
+                                frameY.toFloat(),
+                                (frameX + frameW).toFloat(),
+                                (frameY + frameH).toFloat(),
+                                clearPaint
+                            )
+                        }
+                    }
+                }
+            }
+
+            offset += paddedSize
+        }
+
+        canvasBitmap?.recycle()
+
+        if (frames.isEmpty()) return null
+
+        val avgDuration = if (durations.isNotEmpty()) durations.average().toInt().coerceIn(30, 140) else 66
+        return AnimationFrames(frames, avgDuration)
+    }
+
+    private fun decodeWebpFrameSubchunks(
+        bytes: ByteArray,
+        subchunksOffset: Int,
+        subchunksSize: Int,
+        frameW: Int,
+        frameH: Int
+    ): Bitmap? {
+        if (subchunksSize < 8) return null
+
+        var hasAlpha = false
+        var offset = subchunksOffset
+        val endOffset = subchunksOffset + subchunksSize
+
+        while (offset + 8 <= endOffset) {
+            val fourCC = String(bytes, offset, 4, Charsets.US_ASCII)
+            val cSize = readUInt32LE(bytes, offset + 4)
+            if (fourCC == "ALPH") {
+                hasAlpha = true
+                break
+            }
+            val paddedSize = 8 + cSize + (if (cSize % 2 != 0) 1 else 0)
+            offset += paddedSize
+        }
+
+        val firstFourCC = String(bytes, subchunksOffset, 4, Charsets.US_ASCII)
+        val opts = BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.ARGB_8888 }
+
+        if (firstFourCC == "VP8L") {
+            val out = ByteArrayOutputStream(12 + subchunksSize)
+            out.write("RIFF".toByteArray(Charsets.US_ASCII))
+            writeUInt32LE(out, 4 + subchunksSize)
+            out.write("WEBP".toByteArray(Charsets.US_ASCII))
+            out.write(bytes, subchunksOffset, subchunksSize)
+            val standalone = out.toByteArray()
+            val bmp = BitmapFactory.decodeByteArray(standalone, 0, standalone.size, opts)
+            if (bmp != null) return bmp
+        }
+
+        if (hasAlpha) {
+            val vp8xPayloadSize = 10
+            val vp8xTotalChunkSize = 8 + vp8xPayloadSize
+            val totalRiffPayload = 4 + vp8xTotalChunkSize + subchunksSize
+
+            val out = ByteArrayOutputStream(8 + totalRiffPayload)
+            out.write("RIFF".toByteArray(Charsets.US_ASCII))
+            writeUInt32LE(out, totalRiffPayload)
+            out.write("WEBP".toByteArray(Charsets.US_ASCII))
+
+            out.write("VP8X".toByteArray(Charsets.US_ASCII))
+            writeUInt32LE(out, vp8xPayloadSize)
+            out.write(0x10) // Bit 4: Alpha
+            out.write(0x00)
+            out.write(0x00)
+            out.write(0x00)
+            writeUInt24LE(out, frameW - 1)
+            writeUInt24LE(out, frameH - 1)
+
+            out.write(bytes, subchunksOffset, subchunksSize)
+
+            val standalone = out.toByteArray()
+            val bmp = BitmapFactory.decodeByteArray(standalone, 0, standalone.size, opts)
+            if (bmp != null) return bmp
+        }
+
+        val outSimple = ByteArrayOutputStream(12 + subchunksSize)
+        outSimple.write("RIFF".toByteArray(Charsets.US_ASCII))
+        writeUInt32LE(outSimple, 4 + subchunksSize)
+        outSimple.write("WEBP".toByteArray(Charsets.US_ASCII))
+        outSimple.write(bytes, subchunksOffset, subchunksSize)
+        val standaloneSimple = outSimple.toByteArray()
+        val bmpSimple = BitmapFactory.decodeByteArray(standaloneSimple, 0, standaloneSimple.size, opts)
+        if (bmpSimple != null) return bmpSimple
+
+        val vp8xPayloadSize = 10
+        val vp8xTotalChunkSize = 8 + vp8xPayloadSize
+        val totalRiffPayload = 4 + vp8xTotalChunkSize + subchunksSize
+
+        val outVp8x = ByteArrayOutputStream(8 + totalRiffPayload)
+        outVp8x.write("RIFF".toByteArray(Charsets.US_ASCII))
+        writeUInt32LE(outVp8x, totalRiffPayload)
+        outVp8x.write("WEBP".toByteArray(Charsets.US_ASCII))
+        outVp8x.write("VP8X".toByteArray(Charsets.US_ASCII))
+        writeUInt32LE(outVp8x, vp8xPayloadSize)
+        outVp8x.write(0x00)
+        outVp8x.write(0x00)
+        outVp8x.write(0x00)
+        outVp8x.write(0x00)
+        writeUInt24LE(outVp8x, frameW - 1)
+        writeUInt24LE(outVp8x, frameH - 1)
+        outVp8x.write(bytes, subchunksOffset, subchunksSize)
+        val standaloneVp8x = outVp8x.toByteArray()
+        return BitmapFactory.decodeByteArray(standaloneVp8x, 0, standaloneVp8x.size, opts)
     }
 
     private fun isRetrieverValid(retriever: MediaMetadataRetriever): Boolean {

@@ -111,4 +111,27 @@ class YouTubeMediaResolverTest {
     fun testMaxVideoDownloadBytesIs10MBToEnsureFullWhatsAppDuration() {
         assertEquals(10 * 1024 * 1024L, YouTubeMediaResolver.MAX_VIDEO_DOWNLOAD_BYTES)
     }
+
+    @Test
+    fun testInnertubeDataStructures() {
+        val candidate = YouTubeMediaResolver.InnertubeCandidate(
+            url = "https://example.com/video.mp4",
+            label = "Adaptive 720p (avc1)"
+        )
+        val response = YouTubeMediaResolver.InnertubeResponse(
+            candidates = listOf(candidate),
+            title = "Test Video",
+            author = "Test Author"
+        )
+        assertEquals(1, response.candidates.size)
+        assertEquals("Test Video", response.title)
+        assertEquals("Adaptive 720p (avc1)", response.candidates.first().label)
+
+        val legacyResult = YouTubeMediaResolver.InnertubeResult(
+            url = "https://example.com/video.mp4",
+            title = "Test Video",
+            author = "Test Author"
+        )
+        assertEquals("https://example.com/video.mp4", legacyResult.url)
+    }
 }

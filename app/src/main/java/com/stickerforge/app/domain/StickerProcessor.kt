@@ -70,6 +70,7 @@ object StickerProcessor {
                 )
             } else {
                 DiagnosticLogger.logError("StickerProcessor", "AnimatedWebpEncoder fallo: success=$success, exists=${outputFile.exists()}, size=${outputFile.length()}")
+                return null
             }
         }
 

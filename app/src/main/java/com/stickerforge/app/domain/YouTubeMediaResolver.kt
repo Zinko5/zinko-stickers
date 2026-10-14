@@ -75,8 +75,25 @@ object YouTubeMediaResolver {
         return null
     }
 
+    data class InnertubeCandidate(
+        val url: String,
+        val label: String
+    )
+
+    data class InnertubeResponse(
+        val candidates: List<InnertubeCandidate>,
+        val title: String?,
+        val author: String?
+    )
+
+    data class InnertubeResult(
+        val url: String,
+        val title: String?,
+        val author: String?
+    )
+
     /**
-     * Resuelve y descarga los primeros segundos (optimizados a <= 15 MB) de un video o Short de YouTube.
+     * Resuelve y descarga los primeros segundos (optimizados a <= 10 MB) de un video o Short de YouTube.
      */
     fun resolveAndDownload(context: Context, inputUrl: String): YouTubeMediaResult {
         val trimmed = inputUrl.trim()
@@ -99,7 +116,7 @@ object YouTubeMediaResolver {
 
         DiagnosticLogger.log("YouTubeResolver", "ID de video extraido: $videoId")
 
-        var resolvedMediaUrl: String? = null
+        var downloadedFile: File? = null
         var videoTitle: String? = null
         var authorName: String? = null
 
@@ -120,34 +137,54 @@ object YouTubeMediaResolver {
         // 2. Estrategia A (Principal): YouTube Innertube iOS Player API (Directo a googlevideo.com sin intermediarios ni login)
         try {
             DiagnosticLogger.log("YouTubeResolver", "Consultando YouTube Innertube iOS API...")
-            val innertubeResult = resolveViaInnertubeIos(videoId)
-            if (innertubeResult != null && innertubeResult.url.isNotBlank()) {
-                resolvedMediaUrl = innertubeResult.url
-                if (videoTitle == null) videoTitle = innertubeResult.title
-                if (authorName == null) authorName = innertubeResult.author
-                DiagnosticLogger.log("YouTubeResolver", "Innertube iOS resolvio exitosamente stream directo")
+            val innertubeResponse = resolveViaInnertubeIosCandidates(videoId)
+            if (innertubeResponse != null && innertubeResponse.candidates.isNotEmpty()) {
+                if (videoTitle == null) videoTitle = innertubeResponse.title
+                if (authorName == null) authorName = innertubeResponse.author
+
+                for (candidate in innertubeResponse.candidates) {
+                    try {
+                        DiagnosticLogger.log("YouTubeResolver", "Intentando descarga directa Innertube (${candidate.label})...")
+                        val file = downloadVideoWithSafetyLimit(context, candidate.url)
+                        if (file.exists() && file.length() > 0) {
+                            downloadedFile = file
+                            DiagnosticLogger.log("YouTubeResolver", "Innertube iOS resolvio y descargo exitosamente stream directo (${candidate.label})")
+                            break
+                        }
+                    } catch (e: Exception) {
+                        DiagnosticLogger.log("YouTubeResolver", "Fallo descarga de candidato Innertube (${candidate.label}): ${e.message}")
+                    }
+                }
             }
         } catch (e: Exception) {
             DiagnosticLogger.log("YouTubeResolver", "Innertube iOS excepcion: ${e.message}")
         }
 
-        // 3. Estrategia B (Fallback): Cobalt v10 con instancias sin auth (CobaltInstanceProvider)
-        if (resolvedMediaUrl.isNullOrBlank()) {
+        // 3. Estrategia B (Fallback 1): Cobalt v10 con instancias sin auth (CobaltInstanceProvider)
+        if (downloadedFile == null || !downloadedFile.exists() || downloadedFile.length() == 0L) {
             try {
-                DiagnosticLogger.log("YouTubeResolver", "Consultando Cobalt v10...")
+                DiagnosticLogger.log("YouTubeResolver", "Iniciando fallback a Cobalt v10...")
                 val standardYoutubeUrl = "https://www.youtube.com/watch?v=$videoId"
                 val cobaltResult = CobaltInstanceProvider.resolveMedia(standardYoutubeUrl, videoQuality = "720")
                 if (cobaltResult != null && cobaltResult.url.isNotBlank()) {
-                    resolvedMediaUrl = cobaltResult.url
-                    DiagnosticLogger.log("YouTubeResolver", "Cobalt v10 resolvio stream: $resolvedMediaUrl")
+                    DiagnosticLogger.log("YouTubeResolver", "Cobalt v10 resolvio stream: ${cobaltResult.url}")
+                    try {
+                        val file = downloadVideoWithSafetyLimit(context, cobaltResult.url)
+                        if (file.exists() && file.length() > 0) {
+                            downloadedFile = file
+                            DiagnosticLogger.log("YouTubeResolver", "Cobalt v10 descargo exitosamente stream")
+                        }
+                    } catch (e: Exception) {
+                        DiagnosticLogger.log("YouTubeResolver", "Descarga de stream Cobalt fallo: ${e.message}")
+                    }
                 }
             } catch (e: Exception) {
                 DiagnosticLogger.log("YouTubeResolver", "Cobalt v10 fallo: ${e.message}")
             }
         }
 
-        // 4. Estrategia C (Fallback): Invidious API instances
-        if (resolvedMediaUrl.isNullOrBlank()) {
+        // 4. Estrategia C (Fallback 2): Invidious API instances
+        if (downloadedFile == null || !downloadedFile.exists() || downloadedFile.length() == 0L) {
             val invidiousInstances = listOf(
                 "https://inv.nadeko.net",
                 "https://invidious.nerdvpn.de",
@@ -156,10 +193,10 @@ object YouTubeMediaResolver {
             )
 
             for (instance in invidiousInstances) {
-                if (!resolvedMediaUrl.isNullOrBlank()) break
+                if (downloadedFile != null && downloadedFile.exists() && downloadedFile.length() > 0) break
                 try {
                     val apiUrl = "$instance/api/v1/videos/$videoId"
-                    DiagnosticLogger.log("YouTubeResolver", "Consultando Invidious: $apiUrl...")
+                    DiagnosticLogger.log("YouTubeResolver", "Consultando Invidious fallback: $apiUrl...")
                     val jsonStr = fetchHttpString(apiUrl)
                     if (!jsonStr.isNullOrBlank()) {
                         val root = JSONObject(jsonStr)
@@ -170,6 +207,8 @@ object YouTubeMediaResolver {
                             authorName = root.optString("author").ifBlank { null }
                         }
 
+                        val candidateUrls = mutableListOf<String>()
+
                         val formatStreams = root.optJSONArray("formatStreams")
                         if (formatStreams != null && formatStreams.length() > 0) {
                             for (i in 0 until formatStreams.length()) {
@@ -177,26 +216,33 @@ object YouTubeMediaResolver {
                                 val sUrl = streamObj.optString("url")
                                 val container = streamObj.optString("container")
                                 if (sUrl.isNotBlank() && (container.contains("mp4", ignoreCase = true) || sUrl.contains(".mp4"))) {
-                                    resolvedMediaUrl = sUrl
-                                    DiagnosticLogger.log("YouTubeResolver", "Invidious formatStreams resolvio URL: $resolvedMediaUrl")
-                                    break
+                                    candidateUrls.add(sUrl)
                                 }
                             }
                         }
 
-                        if (resolvedMediaUrl.isNullOrBlank()) {
-                            val adaptiveFormats = root.optJSONArray("adaptiveFormats")
-                            if (adaptiveFormats != null) {
-                                for (i in 0 until adaptiveFormats.length()) {
-                                    val streamObj = adaptiveFormats.getJSONObject(i)
-                                    val sUrl = streamObj.optString("url")
-                                    val type = streamObj.optString("type")
-                                    if (sUrl.isNotBlank() && type.startsWith("video/mp4", ignoreCase = true)) {
-                                        resolvedMediaUrl = sUrl
-                                        DiagnosticLogger.log("YouTubeResolver", "Invidious adaptiveFormats resolvio URL: $resolvedMediaUrl")
-                                        break
-                                    }
+                        val adaptiveFormats = root.optJSONArray("adaptiveFormats")
+                        if (adaptiveFormats != null) {
+                            for (i in 0 until adaptiveFormats.length()) {
+                                val streamObj = adaptiveFormats.getJSONObject(i)
+                                val sUrl = streamObj.optString("url")
+                                val type = streamObj.optString("type")
+                                if (sUrl.isNotBlank() && type.startsWith("video/mp4", ignoreCase = true)) {
+                                    candidateUrls.add(sUrl)
                                 }
+                            }
+                        }
+
+                        for (sUrl in candidateUrls) {
+                            try {
+                                val file = downloadVideoWithSafetyLimit(context, sUrl)
+                                if (file.exists() && file.length() > 0) {
+                                    downloadedFile = file
+                                    DiagnosticLogger.log("YouTubeResolver", "Invidious descargo exitosamente URL: $sUrl")
+                                    break
+                                }
+                            } catch (e: Exception) {
+                                DiagnosticLogger.log("YouTubeResolver", "Descarga de Invidious URL fallo: ${e.message}")
                             }
                         }
                     }
@@ -206,20 +252,19 @@ object YouTubeMediaResolver {
             }
         }
 
-        if (resolvedMediaUrl.isNullOrBlank()) {
-            DiagnosticLogger.logError("YouTubeResolver", "No se pudo extraer la pista de video de YouTube para: $trimmed")
+        val finalFile = downloadedFile
+        if (finalFile == null || !finalFile.exists() || finalFile.length() == 0L) {
+            DiagnosticLogger.logError("YouTubeResolver", "No se pudo descargar la pista de video de YouTube para: $trimmed")
             throw IllegalStateException("No se pudo obtener el video de YouTube. Verifica que el video o Short sea publico.")
         }
 
-        DiagnosticLogger.log("YouTubeResolver", "Descargando video optimizado (limite maximo ${MAX_VIDEO_DOWNLOAD_BYTES / (1024 * 1024)} MB)...")
-        val downloadedFile = downloadVideoWithSafetyLimit(context, resolvedMediaUrl)
-        DiagnosticLogger.log("YouTubeResolver", "Descarga completada: ${downloadedFile.name}, tamano=${downloadedFile.length()} bytes")
+        DiagnosticLogger.log("YouTubeResolver", "Descarga completada: ${finalFile.name}, tamano=${finalFile.length()} bytes")
 
         // Normalizar marcas MP4 y ajustar atomos truncados para compatibilidad perfecta con MediaCodec/Stagefright
-        normalizeMp4Brands(downloadedFile)
+        normalizeMp4Brands(finalFile)
 
         return YouTubeMediaResult(
-            file = downloadedFile,
+            file = finalFile,
             author = authorName,
             title = videoTitle,
             isVideo = true
@@ -245,6 +290,7 @@ object YouTubeMediaResolver {
     /**
      * Descarga el video utilizando un limite seguro de bytes (10 MB).
      * Evita descargar videos largos enteros (de 20 min o varias horas) cuando solo se requieren los primeros 9.6 segundos.
+     * Incorpora reduccion inteligente de rango y fallback ante limitaciones de buffer de la CDN de Google (HTTP 403).
      */
     private fun downloadVideoWithSafetyLimit(context: Context, downloadUrl: String): File {
         var conn: HttpURLConnection? = null
@@ -258,25 +304,39 @@ object YouTubeMediaResolver {
             conn = openVideoConnection(downloadUrl, activeLimitBytes)
             var status = conn.responseCode
 
-            // Si GoogleVideo devuelve 403 por exceder el buffer inicial en la pista seleccionada, reintentar con 8 MB y 5 MB
+            // Si GoogleVideo o el servidor devuelve 403 por exceder el buffer inicial en la pista seleccionada,
+            // reintentar reduciendo el tamaño del buffer progresivamente hasta 800 KB (que para bitrate normal de YouTube
+            // contiene >30-50 segundos de video, holgadamente cubriendo el limite de 9.6s de sticker)
             if (status == 403 && downloadUrl.contains("googlevideo.com", ignoreCase = true)) {
-                conn.disconnect()
-                DiagnosticLogger.log("YouTubeResolver", "HTTP 403 con buffer de 10 MB, reintentando con rango de 8 MB...")
-                activeLimitBytes = 8 * 1024 * 1024L
-                conn = openVideoConnection(downloadUrl, activeLimitBytes)
-                status = conn.responseCode
-                if (status == 403) {
-                    conn.disconnect()
-                    DiagnosticLogger.log("YouTubeResolver", "HTTP 403 con buffer de 8 MB, reintentando con rango de 5 MB...")
-                    activeLimitBytes = 5 * 1024 * 1024L
+                val stepDowns = listOf(
+                    8 * 1024 * 1024L,      // 8 MB
+                    5 * 1024 * 1024L,      // 5 MB
+                    2 * 1024 * 1024L,      // 2 MB
+                    1024 * 1024L,          // 1 MB
+                    800 * 1024L            // 800 KB
+                )
+                for (fallbackBytes in stepDowns) {
+                    if (status != 403) break
+                    conn?.disconnect()
+                    DiagnosticLogger.log("YouTubeResolver", "HTTP 403 con buffer de ${activeLimitBytes / 1024} KB, reintentando con rango de ${fallbackBytes / 1024} KB...")
+                    activeLimitBytes = fallbackBytes
                     conn = openVideoConnection(downloadUrl, activeLimitBytes)
+                    status = conn.responseCode
+                }
+
+                // Si todos los rangos con Range fallan con 403, intentar streaming continuo regular sin header Range
+                if (status == 403) {
+                    conn?.disconnect()
+                    DiagnosticLogger.log("YouTubeResolver", "HTTP 403 persistente con Range, reintentando en streaming regular sin Range...")
+                    activeLimitBytes = MAX_VIDEO_DOWNLOAD_BYTES
+                    conn = openVideoConnection(downloadUrl, null)
                     status = conn.responseCode
                 }
             }
 
             if (status == 416) {
-                // Si el servidor rechaza el header de rango (ej. Short mas corto que el limite), reconectar en streaming continuo
-                conn.disconnect()
+                // Si el servidor rechaza el header de rango (ej. Short mas corto que el limite), reconectar en streaming regular
+                conn?.disconnect()
                 DiagnosticLogger.log("YouTubeResolver", "HTTP 416 (rango fuera de limite), reconectando en streaming regular...")
                 activeLimitBytes = MAX_VIDEO_DOWNLOAD_BYTES
                 conn = openVideoConnection(downloadUrl, null)
@@ -284,10 +344,11 @@ object YouTubeMediaResolver {
             }
 
             if (status !in 200..299 && status != 206) {
-                throw IllegalStateException("Servidor respondio con HTTP $status al intentar descargar el video de YouTube.")
+                throw IllegalStateException("Servidor respondio con HTTP $status al intentar descargar el stream de YouTube.")
             }
 
-            inStream = conn.inputStream
+            val currentConn = conn ?: throw IllegalStateException("Conexion HTTP no inicializada.")
+            inStream = currentConn.inputStream
             outStream = FileOutputStream(tempFile)
 
             val buffer = ByteArray(16 * 1024)
@@ -298,7 +359,7 @@ object YouTubeMediaResolver {
                 totalBytesRead += bytesRead
                 outStream.write(buffer, 0, bytesRead)
                 if (totalBytesRead >= activeLimitBytes) {
-                    DiagnosticLogger.log("YouTubeResolver", "Limite seguro de ${activeLimitBytes / (1024 * 1024)} MB alcanzado, finalizando stream para procesar el clip de 9.6s.")
+                    DiagnosticLogger.log("YouTubeResolver", "Limite seguro de ${activeLimitBytes / 1024} KB alcanzado, finalizando stream para procesar el clip de 9.6s.")
                     break
                 }
             }
@@ -343,18 +404,21 @@ object YouTubeMediaResolver {
         }
     }
 
-    data class InnertubeResult(
-        val url: String,
-        val title: String?,
-        val author: String?
-    )
-
     /**
      * Resuelve el enlace directo al stream multimedia de YouTube usando el cliente nativo iOS de Innertube.
-     * No requiere autenticacion, ni cookies, ni proxies intermediarios, y entrega streams H.264 MP4 directos
-     * desde la CDN oficial de Google (googlevideo.com).
+     * Retorna el mejor resultado compatible para compatibilidad previa.
      */
     fun resolveViaInnertubeIos(videoId: String): InnertubeResult? {
+        val response = resolveViaInnertubeIosCandidates(videoId) ?: return null
+        val first = response.candidates.firstOrNull() ?: return null
+        return InnertubeResult(first.url, response.title, response.author)
+    }
+
+    /**
+     * Resuelve multiples candidatos de streams multimedia directos de YouTube usando el cliente nativo iOS de Innertube.
+     * No requiere autenticacion ni cookies, y entrega streams H.264 MP4 directos desde googlevideo.com.
+     */
+    fun resolveViaInnertubeIosCandidates(videoId: String): InnertubeResponse? {
         var conn: HttpURLConnection? = null
         return try {
             val endpoint = "https://www.youtube.com/youtubei/v1/player"
@@ -373,6 +437,8 @@ object YouTubeMediaResolver {
                     })
                 })
                 put("videoId", videoId)
+                put("contentCheckOk", true)
+                put("racyCheckOk", true)
             }.toString()
 
             val url = URL(endpoint)
@@ -404,8 +470,9 @@ object YouTubeMediaResolver {
                 val author = details?.optString("author")?.ifBlank { null }
 
                 val streamingData = root.optJSONObject("streamingData") ?: return null
+                val candidateList = mutableListOf<InnertubeCandidate>()
 
-                // 1. Buscar en muxed formats
+                // 1. Buscar en muxed formats (audio + video combinados)
                 val formats = streamingData.optJSONArray("formats")
                 if (formats != null) {
                     for (i in 0 until formats.length()) {
@@ -413,40 +480,52 @@ object YouTubeMediaResolver {
                         val sUrl = f.optString("url")
                         val mime = f.optString("mimeType")
                         if (sUrl.isNotBlank() && mime.contains("video/mp4", ignoreCase = true)) {
-                            DiagnosticLogger.log("YouTubeResolver", "Innertube iOS resolvio formato muxed: ${f.optString("qualityLabel")}")
-                            return InnertubeResult(sUrl, title, author)
+                            candidateList.add(InnertubeCandidate(sUrl, "Muxed ${f.optString("qualityLabel")}"))
                         }
                     }
                 }
 
-                // 2. Buscar en adaptiveFormats (preferir 720p, luego 480p, 360p, 1080p)
+                // 2. Buscar en adaptiveFormats (preferir codecs H.264 / avc1: 720p, 480p, 360p, 1080p)
                 val adaptive = streamingData.optJSONArray("adaptiveFormats")
                 if (adaptive != null && adaptive.length() > 0) {
-                    val candidates = mutableListOf<JSONObject>()
+                    val adaptiveCandidates = mutableListOf<JSONObject>()
                     for (i in 0 until adaptive.length()) {
                         val f = adaptive.optJSONObject(i) ?: continue
                         val sUrl = f.optString("url")
                         val mime = f.optString("mimeType")
                         if (sUrl.isNotBlank() && mime.contains("video/mp4", ignoreCase = true)) {
-                            candidates.add(f)
+                            adaptiveCandidates.add(f)
                         }
                     }
 
-                    if (candidates.isNotEmpty()) {
-                        // Priorizar codecs H.264 (avc1) para compatibilidad universal con decodificadores hardware de Android
-                        val avcCandidates = candidates.filter { it.optString("mimeType").contains("avc1", ignoreCase = true) }
-                        val pool = if (avcCandidates.isNotEmpty()) avcCandidates else candidates
+                    if (adaptiveCandidates.isNotEmpty()) {
+                        val avcCandidates = adaptiveCandidates.filter { it.optString("mimeType").contains("avc1", ignoreCase = true) }
+                        val otherCandidates = adaptiveCandidates.filterNot { it.optString("mimeType").contains("avc1", ignoreCase = true) }
 
-                        val preferred = pool.firstOrNull { it.optString("qualityLabel").startsWith("720") }
-                            ?: pool.firstOrNull { it.optString("qualityLabel").startsWith("480") }
-                            ?: pool.firstOrNull { it.optString("qualityLabel").startsWith("360") }
-                            ?: pool.firstOrNull { it.optString("qualityLabel").startsWith("1080") }
-                            ?: pool.first()
+                        val sortedAvc = avcCandidates.sortedWith(compareBy {
+                            val q = it.optString("qualityLabel")
+                            when {
+                                q.startsWith("720") -> 0
+                                q.startsWith("480") -> 1
+                                q.startsWith("360") -> 2
+                                q.startsWith("1080") -> 3
+                                else -> 4
+                            }
+                        })
 
-                        val sUrl = preferred.optString("url")
-                        DiagnosticLogger.log("YouTubeResolver", "Innertube iOS resolvio stream adaptativo: ${preferred.optString("qualityLabel")} (${preferred.optString("mimeType")})")
-                        return InnertubeResult(sUrl, title, author)
+                        for (item in sortedAvc) {
+                            candidateList.add(InnertubeCandidate(item.optString("url"), "Adaptive ${item.optString("qualityLabel")} (avc1)"))
+                        }
+
+                        for (item in otherCandidates) {
+                            candidateList.add(InnertubeCandidate(item.optString("url"), "Adaptive ${item.optString("qualityLabel")} (${item.optString("mimeType").take(15)})"))
+                        }
                     }
+                }
+
+                if (candidateList.isNotEmpty()) {
+                    DiagnosticLogger.log("YouTubeResolver", "Innertube iOS resolvio ${candidateList.size} candidatos de stream directo")
+                    return InnertubeResponse(candidateList, title, author)
                 }
             } else {
                 DiagnosticLogger.log("YouTubeResolver", "Innertube iOS respondio con HTTP ${conn.responseCode}")
